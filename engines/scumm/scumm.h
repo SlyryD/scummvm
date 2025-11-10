@@ -97,6 +97,7 @@ class MusicEngine;
 class Player_Towns;
 class ScummEngine;
 class ScummDebugger;
+class ScummRandomizer;
 class Sound;
 class Localizer;
 class GlyphRenderer_v7;
@@ -520,6 +521,7 @@ class ScummEngine : public Engine, public Common::Serializable {
 	friend class MacV5Gui;
 	friend class MacV6Gui;
 	friend class LogicHEBasketball;
+	friend class ScummRandomizer;
 
 public:
 	/* Put often used variables at the top.
