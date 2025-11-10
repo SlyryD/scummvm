@@ -56,9 +56,9 @@ private:
 	void randomizeObjectClasses();
 	
 	// Output
+	bool copyAllGameFiles();
 	bool writeIndexFile();
 	bool writeGlobalObjects();
-	bool copyDataFile();
 	
 	// Utilities
 	void skipBytes(uint32 count, bool isEncrypted);
@@ -69,9 +69,7 @@ private:
 	
 	// File streams
 	std::ifstream _indexFile;
-	std::ifstream _dataFile;
 	std::ofstream _outputIndexFile;
-	std::ofstream _outputDataFile;
 	
 	// Paths
 	std::string _inputDir;

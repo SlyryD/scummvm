@@ -18,10 +18,10 @@ int main(int argc, char *argv[]) {
     ScummRandomizer randomizer;
     
     // Set up paths
-    std::string inputDir = "input/" + gameId;
+    std::string inputDir = "input";
     std::string outputDir = "output";
     
-    std::cout << "Input directory: " << inputDir << std::endl;
+    std::cout << "Input directory: " << inputDir << "/" << gameId << std::endl;
     std::cout << "Output directory: " << outputDir << std::endl;
     
     // Initialize the randomizer

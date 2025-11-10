@@ -98,12 +98,8 @@ ScummRandomizer::ScummRandomizer() :
 ScummRandomizer::~ScummRandomizer() {
 	if (_indexFile.is_open())
 		_indexFile.close();
-	if (_dataFile.is_open())
-		_dataFile.close();
 	if (_outputIndexFile.is_open())
 		_outputIndexFile.close();
-	if (_outputDataFile.is_open())
-		_outputDataFile.close();
 }
 
 bool ScummRandomizer::initialize(const std::string &inputDir, const std::string &outputDir, const std::string &gameId) {
@@ -121,24 +117,24 @@ bool ScummRandomizer::initialize(const std::string &inputDir, const std::string 
 bool ScummRandomizer::randomizeGame() {
 	logMessage("=== Starting SCUMM Game Randomization ===");
 	
-	// Step 1: Read the index file
+	// Step 1: Create output game directory and copy all files
+	if (!copyAllGameFiles()) {
+		logMessage("ERROR: Failed to copy game files");
+		return false;
+	}
+	
+	// Step 2: Read the index file
 	if (!readIndexFile()) {
 		logMessage("ERROR: Failed to read index file");
 		return false;
 	}
 	
-	// Step 2: Randomize the objects
+	// Step 3: Randomize the objects
 	randomizeObjects();
 	
-	// Step 3: Write the new index file
+	// Step 4: Write the new index file (overwrites the copied one)
 	if (!writeIndexFile()) {
 		logMessage("ERROR: Failed to write index file");
-		return false;
-	}
-	
-	// Step 4: Copy the data file (unchanged for now)
-	if (!copyDataFile()) {
-		logMessage("ERROR: Failed to copy data file");
 		return false;
 	}
 	
@@ -147,8 +143,8 @@ bool ScummRandomizer::randomizeGame() {
 }
 
 bool ScummRandomizer::readIndexFile() {
-	// Construct the index filename (e.g., MONKEY2.000)
-	std::string indexPath = _inputDir + "/" + _gameId + ".000";
+	// Construct the index filename (e.g., input/MONKEY2/MONKEY2.000)
+	std::string indexPath = _inputDir + "/" + _gameId + "/" + _gameId + ".000";
 	
 	logMessage("Reading index file: %s", indexPath.c_str());
 	
@@ -451,8 +447,36 @@ void ScummRandomizer::randomizeObjectClasses() {
 	logMessage("Object classes randomized");
 }
 
+bool ScummRandomizer::copyAllGameFiles() {
+	// Create output game directory
+	std::string outputGameDir = _outputDir + "/" + _gameId;
+	
+	logMessage("Creating output game directory: %s", outputGameDir.c_str());
+	
+	// Create directory (Note: This is a simple approach - in production you'd want proper directory creation)
+	std::string mkdirCmd = "mkdir -p \"" + outputGameDir + "\"";
+	if (system(mkdirCmd.c_str()) != 0) {
+		logMessage("ERROR: Failed to create output directory: %s", outputGameDir.c_str());
+		return false;
+	}
+	
+	// Copy all files from input game directory to output game directory
+	std::string inputGameDir = _inputDir + "/" + _gameId;
+	std::string copyCmd = "cp \"" + inputGameDir + "\"/* \"" + outputGameDir + "\"/";
+	
+	logMessage("Copying all game files from %s to %s", inputGameDir.c_str(), outputGameDir.c_str());
+	
+	if (system(copyCmd.c_str()) != 0) {
+		logMessage("ERROR: Failed to copy game files");
+		return false;
+	}
+	
+	logMessage("All game files copied successfully");
+	return true;
+}
+
 bool ScummRandomizer::writeIndexFile() {
-	std::string outputIndexPath = _outputDir + "/" + _gameId + ".000";
+	std::string outputIndexPath = _outputDir + "/" + _gameId + "/" + _gameId + ".000";
 	
 	logMessage("Writing randomized index file: %s", outputIndexPath.c_str());
 	
@@ -463,7 +487,7 @@ bool ScummRandomizer::writeIndexFile() {
 	}
 	
 	// Re-read the original index file to copy structure
-	std::string indexPath = _inputDir + "/" + _gameId + ".000";
+	std::string indexPath = _inputDir + "/" + _gameId + "/" + _gameId + ".000";
 	_indexFile.open(indexPath, std::ios::binary);
 	if (!_indexFile.is_open()) {
 		logMessage("ERROR: Cannot re-open index file: %s", indexPath.c_str());
@@ -525,44 +549,6 @@ bool ScummRandomizer::writeGlobalObjects() {
 	
 	return true;
 }
-
-bool ScummRandomizer::copyDataFile() {
-	std::string inputDataPath = _inputDir + "/" + _gameId + ".001";
-	std::string outputDataPath = _outputDir + "/" + _gameId + ".001";
-	
-	logMessage("Copying data file: %s -> %s", inputDataPath.c_str(), outputDataPath.c_str());
-	
-	_dataFile.open(inputDataPath, std::ios::binary);
-	if (!_dataFile.is_open()) {
-		logMessage("ERROR: Cannot open input data file: %s", inputDataPath.c_str());
-		return false;
-	}
-	
-	_outputDataFile.open(outputDataPath, std::ios::binary);
-	if (!_outputDataFile.is_open()) {
-		logMessage("ERROR: Cannot create output data file: %s", outputDataPath.c_str());
-		return false;
-	}
-	
-	// Copy data file in chunks
-	const int BUFFER_SIZE = 8192;
-	char buffer[BUFFER_SIZE];
-	
-	while (!_dataFile.eof()) {
-		_dataFile.read(buffer, BUFFER_SIZE);
-		if (_dataFile.gcount() > 0) {
-			_outputDataFile.write(buffer, _dataFile.gcount());
-		}
-	}
-	
-	_dataFile.close();
-	_outputDataFile.close();
-	
-	logMessage("Data file copied successfully");
-	return true;
-}
-
-
 
 std::string ScummRandomizer::tagToString(uint32 tag) {
 	char str[5];

@@ -28,7 +28,7 @@
 #include <stdarg.h>	// For va_list etc.
 
 // TODO: Move gDebugLevel into namespace Common.
-int gDebugLevel = -1;
+int gDebugLevel = 2;
 bool gDebugChannelsOnly = false;
 
 const DebugChannelDef gDebugChannels[] = {
