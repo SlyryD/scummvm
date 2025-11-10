@@ -1,0 +1,36 @@
+# SCUMM Randomizer Standalone Makefile
+
+# Compiler settings
+CXX := g++
+CXXFLAGS := -std=c++11 -Wall -Wextra -O2 -g
+
+# Target executable
+TARGET := scumm_randomizer_standalone
+
+# Source files
+SOURCES := main_standalone.cpp scumm_randomizer_standalone.cpp
+OBJECTS := $(SOURCES:.cpp=.o)
+
+# Default target
+all: $(TARGET)
+
+# Build the executable
+$(TARGET): $(OBJECTS)
+	@echo "Linking $(TARGET)..."
+	$(CXX) $(CXXFLAGS) -o $@ $^
+
+# Compile source files
+%.o: %.cpp
+	@echo "Compiling $<..."
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# Clean build artifacts
+clean:
+	rm -f $(OBJECTS) $(TARGET)
+
+# Phony targets
+.PHONY: all clean
+
+# Dependencies
+main_standalone.o: main_standalone.cpp scumm_randomizer_standalone.h
+scumm_randomizer_standalone.o: scumm_randomizer_standalone.cpp scumm_randomizer_standalone.h

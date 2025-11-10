@@ -1,0 +1,3 @@
+# This file ensures the input directory is kept in git
+# Place your SCUMM game files (.000, .001) in subdirectories here
+# Example: input/MONKEY2/MONKEY2.000, input/MONKEY2/MONKEY2.001

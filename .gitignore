@@ -48,6 +48,12 @@ lib*.a
 /Icon.*
 /scummvm-conf.cpp
 /tmp_*.cpp
+
+# Randomizer tool - ignore input/output content but keep directory structure
+/randomizer/input/*
+!/randomizer/input/.gitkeep
+/randomizer/output/*
+!/randomizer/output/.gitkeep
 /*.apk
 /CMakeLists.txt
 
