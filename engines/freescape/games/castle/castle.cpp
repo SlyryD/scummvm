@@ -339,7 +339,9 @@ void CastleEngine::gotoArea(uint16 areaID, int entranceID) {
 	assert(_areaMap.contains(areaID));
 	_currentArea = _areaMap[areaID];
 	_currentArea->show();
-	_maxFallingDistance = MAX(32, _currentArea->getScale() * 16 - 2); 
+	_maxFallingDistance = MAX(32, _currentArea->getScale() * 16 - 2);
+
+	_nearClipPlane = _currentArea->isOutside() ? 2 : 0.5;
 
 	if (entranceID > 0)
 		traverseEntrance(entranceID);
@@ -481,7 +483,8 @@ void CastleEngine::endGame() {
 
 		if (isDOS()) {
 			drawFullscreenEndGameAndWait();
-		}
+		} else
+			drawFullscreenGameOverAndWait();
 	} else {
 		drawFullscreenGameOverAndWait();
 	}
@@ -539,7 +542,7 @@ void CastleEngine::pressedKey(const int keycode) {
 	} else if (keycode == kActionFaceForward) {
 		_pitch = 0;
 		updateCamera();
-	} else if (keycode == kActionActivate) 
+	} else if (keycode == kActionActivate)
 		activate();
 }
 
@@ -868,11 +871,18 @@ void CastleEngine::drawFullscreenGameOverAndWait() {
 		playSound(9, false, _soundFxHandle);
 	}
 
+	if (isSpectrum() && getGameBit(31)) {
+		insertTemporaryMessage(_messagesList[5], _countdown - 1);
+	}
+
 	while (!shouldQuit() && cont) {
 		if (_temporaryMessageDeadlines.empty()) {
 			insertTemporaryMessage(scoreString, _countdown - 2);
 			insertTemporaryMessage(spiritsDestroyedString, _countdown - 4);
 			insertTemporaryMessage(keysCollectedString, _countdown - 6);
+			if (isSpectrum() && getGameBit(31)) {
+				insertTemporaryMessage(_messagesList[5], _countdown - 8);
+			}
 		}
 
 		while (_eventManager->pollEvent(event)) {
@@ -1561,6 +1571,9 @@ void CastleEngine::drawLiftingGate(Graphics::Surface *surface) {
 }
 
 void CastleEngine::drawDroppingGate(Graphics::Surface *surface) {
+	if (isSpectrum() && getGameBit(31))
+		return; // No gate dropping when the player escaped
+
 	if (_droppingGateStartTicks <= 0)
 		return;
 

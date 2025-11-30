@@ -40,6 +40,8 @@ For a more comprehensive changelog of the latest experimental code, see:
 
  AGI:
    - Added Text-to-Speech support.
+   - Added support for SQ2 French translation.
+   - Added support for KQ1, KQ2, KQ3 Hebrew translations.
    - Fixed Mickey's Space Adventure sound on PS3, Wii, and other big-endian
      ports.
 
@@ -69,6 +71,9 @@ For a more comprehensive changelog of the latest experimental code, see:
 
  Freescape:
    - Added roll rotation to Driller and Dark Side.
+   - Added full TinyGL support for all the games.
+   - Fixed several small details across all the games including missing
+     graphics and sounds.
 
  Gob:
    - Added Text-to-Speech support.
@@ -83,6 +88,10 @@ For a more comprehensive changelog of the latest experimental code, see:
  Kyra:
    - Reduce CPU usage in the LoL main menu.
    - Reduce CPU usage in EoB 1 and 2.
+   - Introduced new launcher checkbox in Eye of the Beholder 1 and 2,
+     to enable smarter replacing of thrown weapons from inventory.
+   - In Eye of the Beholder 1, Ileria and Beohram NPC data fix is now behind
+     a separate feature flag and launcher checkbox.
 
  Lab:
    - Added keymapper support.
@@ -128,16 +137,27 @@ For a more comprehensive changelog of the latest experimental code, see:
    - Added keymapper support.
 
  Private:
+   - Added several important missing graphics and gameplay sounds,
+     the engine is now considered to be at feature parity with the original game.
+   - Fixed inaccessible places, missing interactions or conversations.
+   - Added option to highlight decision areas for improved visibility.
+   - Added support for third party subtitles.
+   - Added missing features and fixed crashes in the desktop screen.
+   - Fixed various graphics and cursor glitches.
    - Added keymapper support.
 
  Queen:
    - Added keymapper support.
 
  SCI:
-   - Fixed the palette in SLATER Mac.
-   - Fixed LSL6 temporary freeze after control panel.
-   - Fixed PEPPER spinning in Ben Franklin's workshop.
-   - Enabled extra LSL6 messages when clicking on Larry.
+   - Fixed PHANT1 losing save files. (ScummVM 2.9.0 bug)
+   - Fixed QFG4 v1.1/German lockup when entering cave at end of game.
+   - Fixed PQ2 PC-98 Japanese text not displaying on certain screens.
+   - Fixed KQ1 Amiga crash when incorrectly guessing gnome's name.
+   - Fixed LONGBOW Amiga crash when going to abbey.
+   - Fixed SQ4 Amiga taking three minutes to display title screen.
+   - Fixed script bugs in ECO1, LSL6, PEPPER.
+   - Added support for SLATER Macintosh.
    - Virtual keyboard now correctly triggers on/off wherever text input is
      needed.
 
@@ -205,6 +225,16 @@ For a more comprehensive changelog of the latest experimental code, see:
  Wintermute:
    - 3D renderer enabled by default for 2D games.
    - Added Text-to-Speech support.
+
+ Atari port:
+   - Unified paths for FreeMiNT and TOS in scummvm.cfg (better delete the old
+     config file).
+   - Added translation for longer than 8+3 .dat filenames.
+   - Fixed slow rendering of Eco Quest's intro.
+   - Fixed cursor rendering of Phantasmagoria, KQ7 and other SCI32 games.
+   - Increased stack size to 256k to avoid stack overflow in some engines (e.g.
+     Supernova).
+   - Fixed launching games from command line.
 
 #### 2.9.1 "Slappin da BASS" (2025-05-25)
 

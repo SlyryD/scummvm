@@ -108,7 +108,8 @@ bool FreescapeEngine::executeObjectConditions(GeometricObject *obj, bool shot, b
 		_syncSound = false;
 		_objExecutingCodeSize = collided ? obj->getSize() : Math::Vector3d();
 		if (collided) {
-			clearGameBit(31); // We collided with something that has code
+			if (!isCastle())
+				clearGameBit(31); // We collided with something that has code
 			debugC(1, kFreescapeDebugCode, "Executing with collision flag: %s", obj->_conditionSource.c_str());
 		} else if (shot)
 			debugC(1, kFreescapeDebugCode, "Executing with shot flag: %s", obj->_conditionSource.c_str());
@@ -354,6 +355,8 @@ void FreescapeEngine::executeRedraw(FCLInstruction &instruction) {
 	if (isEclipse2() && _currentArea->getAreaID() == _startArea && _gameStateControl == kFreescapeGameStateStart)
 		delay = delay * 10;
 
+	if (isCastle() && isSpectrum() && getGameBit(31))
+		delay = delay * 15; // Slow down redraws when the final cutscene is playing
 	waitInLoop(delay);
 }
 
@@ -368,7 +371,7 @@ void FreescapeEngine::executeExecute(FCLInstruction &instruction) {
 			if (!obj) {
 				debugC(1, kFreescapeDebugCode, "WARNING: executing instructions from a non-existent object %d", objId);
 				return;
-			} 
+			}
 			assert(obj);
 			FCLInstructionVector &condition = ((Entrance *)obj)->_condition;
 			executeCode(condition, true, true, true, true);
