@@ -71,6 +71,9 @@ private:
 	int _numSounds;
 	int _numCostumes;
 
+	// Optional Scumm engine instance used to access SCUMM internals
+	ScummEngine *_engine;
+
 public:
 	ScummRandomizer();
 	~ScummRandomizer();

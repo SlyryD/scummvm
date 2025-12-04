@@ -51,6 +51,9 @@ protected:
 public:
 	ScummEngine_v5(OSystem *syst, const DetectorResult &dr);
 
+	// Engine APIs
+	Common::Error randomizeGameFiles() override;
+
 	void clearFlashlight();
 
 	void resetCursors() override;

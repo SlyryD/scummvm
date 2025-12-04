@@ -230,6 +230,10 @@ void Engine::initializePath(const Common::FSNode &gamePath) {
 	SearchMan.addDirectory(gamePath, 0, 4);
 }
 
+Common::Error Engine::randomizeGameFiles() {
+	return Common::kUnknownError; // NYI
+}
+
 bool Engine::enhancementEnabled(int32 cls) {
 	return _activeEnhancements & cls;
 }

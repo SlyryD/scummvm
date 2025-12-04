@@ -91,6 +91,7 @@ endif
 #######################################################################
 
 EXECUTABLE  := $(EXEPRE)scummvm$(EXEEXT)
+EXECUTABLE_RANDOMIZER  := $(EXEPRE)scummvm_randomizer$(EXEEXT)
 
 include $(srcdir)/Makefile.common
 
@@ -137,7 +138,7 @@ print-dists:
 	@echo $(DIST_FILES_DOCS) $(DIST_FILES_THEMES) $(DIST_FILES_NETWORKING) $(DIST_FILES_VKEYBD) $(DIST_FILES_ENGINEDATA) $(DIST_FILES_ENGINEDATA_BIG) $(DIST_FILES_SOUNDFONTS) $(DIST_FILES_PLATFORM) $(srcdir)/doc
 
 print-executables:
-	@echo $(if $(DIST_EXECUTABLES),$(DIST_EXECUTABLES),$(EXECUTABLE) $(PLUGINS))
+	@echo $(if $(DIST_EXECUTABLES),$(DIST_EXECUTABLES),$(EXECUTABLE),$(EXECUTABLE_RANDOMIZER) $(PLUGINS))
 
 print-version:
 	@echo $(VERSION)

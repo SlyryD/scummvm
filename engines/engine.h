@@ -355,6 +355,13 @@ public:
 	virtual Common::Error run() = 0;
 
 	/**
+	 * Initialize the engine and start its main loop.
+	 *
+	 * @return kNoError on success, otherwise an error code.
+	 */
+	virtual Common::Error randomizeGameFiles();
+
+	/**
 	 * Prepare an error string that is printed by the error() function.
 	 */
 	virtual void errorString(const char *buf_input, char *buf_output, int buf_output_size);

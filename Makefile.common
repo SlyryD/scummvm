@@ -5,10 +5,17 @@
 # The default build target: just build the scummvm executable
 ######################################################################
 
-all: $(EXECUTABLE) plugins
+all: $(EXECUTABLE) $(EXECUTABLE_RANDOMIZER) plugins
 
 ifdef SPLIT_DWARF
-all: $(EXECUTABLE).dwp
+all: $(EXECUTABLE).dwp $(EXECUTABLE_RANDOMIZER).dwp
+endif
+
+# Randomizer build target
+randomizer: $(EXECUTABLE_RANDOMIZER)
+
+ifdef SPLIT_DWARF
+randomizer: $(EXECUTABLE_RANDOMIZER).dwp
 endif
 
 ifdef USE_PANDOC
@@ -132,6 +139,18 @@ $(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
+$(MODULE_LIB_BASE_RANDOMIZER): $(MODULE_OBJS_BASE_RANDOMIZER)
+	$(QUIET)-$(RM) $@
+	$(QUIET_AR)$(AR) $@ $+
+	$(QUIET_RANLIB)$(RANLIB) $@
+	$(QUIET)$(LS) $@
+
+# The build rule for the ScummVM Randomizer executable
+# Use all standard OBJS except replace base/libbase.a with base/libbase_randomizer.a
+$(EXECUTABLE_RANDOMIZER): $(DETECT_OBJS) $(patsubst $(MODULE_LIB-base),$(MODULE_LIB_BASE_RANDOMIZER),$(OBJS))
+	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
+	+$(QUIET)$(LS) $@
+
 ifdef SPLIT_DWARF
 %.dwp: %
 	$(QUIET_DWP)$(DWP) -e $< -o $@
@@ -152,10 +171,10 @@ distclean: clean clean-devtools clean-test
 clean: clean-toplevel
 clean-toplevel:
 	$(RM_REC) $(DEPDIRS)
-	$(RM) $(OBJS) $(DETECT_OBJS) $(EXECUTABLE) $(PLUGIN_OBJ_FILES)
+	$(RM) $(OBJS) $(DETECT_OBJS) $(EXECUTABLE) $(EXECUTABLE_RANDOMIZER) $(PLUGIN_OBJ_FILES)
 ifdef SPLIT_DWARF
 	$(RM) $(OBJS:.o=.dwo) $(DETECT_OBJS:.o=.dwo)
-	$(RM) $(EXECUTABLE).dwp
+	$(RM) $(EXECUTABLE).dwp $(EXECUTABLE_RANDOMIZER).dwp
 endif
 
 
@@ -468,4 +487,4 @@ DIST_FILES_SOUNDFONTS:=$(addprefix $(srcdir)/dists/soundfonts/,Roland_SC-55.sf2)
 DIST_FILES_DOCS+=$(addprefix $(srcdir)/dists/soundfonts/,COPYRIGHT.Roland_SC-55)
 endif
 
-.PHONY: all clean distclean plugins dist-src clean-toplevel manual
+.PHONY: all clean distclean plugins dist-src clean-toplevel manual randomizer
