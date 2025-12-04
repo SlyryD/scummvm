@@ -5,10 +5,10 @@
 # The default build target: just build the scummvm executable
 ######################################################################
 
-all: $(EXECUTABLE) plugins
+all: $(EXECUTABLE) $(RANDOMIZER_EXECUTABLE) plugins
 
 ifdef SPLIT_DWARF
-all: $(EXECUTABLE).dwp
+all: $(EXECUTABLE).dwp $(RANDOMIZER_EXECUTABLE).dwp
 endif
 
 ifdef USE_PANDOC
@@ -20,7 +20,7 @@ endif
 ######################################################################
 
 PLUGINS :=
-MODULES := test devtools base $(MODULES)
+MODULES := test devtools base randomizer $(MODULES)
 
 -include engines/engines.mk
 
@@ -132,6 +132,21 @@ $(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
+# Build randomizer library with RANDOMIZER_MODULE_OBJS instead of MODULE_OBJS
+base/libbase_randomizer.a: $(RANDOMIZER_MODULE_OBJS)
+	$(QUIET)-$(RM) $@
+	$(QUIET_AR)$(AR) $@ $+
+	$(QUIET_RANLIB)$(RANLIB) $@
+	$(QUIET)$(LS) $@
+
+# Build RANDOMIZER_OBJS list by replacing base/libbase.a with base/libbase_randomizer.a
+RANDOMIZER_OBJS := $(filter-out base/libbase.a,$(OBJS)) base/libbase_randomizer.a randomizer/librandomizer.a
+
+# The build rule for the ScummVM Randomizer executable
+$(RANDOMIZER_EXECUTABLE): $(DETECT_OBJS) $(RANDOMIZER_OBJS)
+	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
+	+$(QUIET)$(LS) $@
+
 ifdef SPLIT_DWARF
 %.dwp: %
 	$(QUIET_DWP)$(DWP) -e $< -o $@
@@ -153,9 +168,11 @@ clean: clean-toplevel
 clean-toplevel:
 	$(RM_REC) $(DEPDIRS)
 	$(RM) $(OBJS) $(DETECT_OBJS) $(EXECUTABLE) $(PLUGIN_OBJ_FILES)
+	$(RM) $(RANDOMIZER_OBJS) $(RANDOMIZER_EXECUTABLE) base/libbase_randomizer.a
 ifdef SPLIT_DWARF
 	$(RM) $(OBJS:.o=.dwo) $(DETECT_OBJS:.o=.dwo)
 	$(RM) $(EXECUTABLE).dwp
+	$(RM) $(RANDOMIZER_EXECUTABLE).dwp
 endif
 
 
