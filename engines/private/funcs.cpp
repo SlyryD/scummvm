@@ -786,10 +786,13 @@ static void fTimer(ArgArray args) {
 	else
 		debugC(1, kPrivateDebugScript, "Timer(%d, %s)", args[0].u.val, args[1].u.str);
 
-	int32 delay = 1000000 * args[0].u.val;
+	int32 delay = args[0].u.val * 1000; // seconds => milliseconds
 	if (delay > 0) {
-		if (!g_private->installTimer(delay, args[1].u.sym->name))
-			error("Timer installation failed!");
+		Common::String skipSetting;
+		if (args.size() == 3) {
+			skipSetting = *(args[2].u.sym->name);
+		}
+		g_private->setTimer(delay, *(args[1].u.sym->name), skipSetting);
 	} else if (delay == 0) {
 		g_private->_nextSetting = *(args[1].u.sym->name);
 	} else {

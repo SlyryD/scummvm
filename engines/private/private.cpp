@@ -122,6 +122,9 @@ PrivateEngine::PrivateEngine(OSystem *syst, const ADGameDescription *gd)
 		_safeDigitArea[d].clear();
 		_safeDigitRect[d] = Common::Rect(0, 0);
 	}
+
+	// Timer
+	clearTimer();
 }
 
 PrivateEngine::~PrivateEngine() {
@@ -354,15 +357,20 @@ Common::Error PrivateEngine::run() {
 
 	while (!shouldQuit()) {
 		bool mouseMoved = false;
+		checkTimer();
 		checkPhoneCall();
 
-		while (g_system->getEventManager()->pollEvent(event)) {
-			mousePos = g_system->getEventManager()->getMousePos();
+		while (_system->getEventManager()->pollEvent(event)) {
+			mousePos = _system->getEventManager()->getMousePos();
 			// Events
 			switch (event.type) {
 			case Common::EVENT_CUSTOM_ENGINE_ACTION_START:
 				if (event.customType == kActionSkip) {
-					skipVideo();
+					if (!_timerSkipSetting.empty()) {
+						skipTimer();
+					} else {
+						skipVideo();
+					}
 				}
 				break;
 
@@ -423,7 +431,7 @@ Common::Error PrivateEngine::run() {
 
 		// Movies
 		if (!_nextMovie.empty()) {
-			removeTimer();
+			clearTimer();
 			_videoDecoder = new Video::SmackerDecoder();
 			playVideo(_nextMovie);
 			_currentMovie = _nextMovie;
@@ -442,20 +450,20 @@ Common::Error PrivateEngine::run() {
 				if (_subtitles != nullptr) {
 					delete _subtitles;
 					_subtitles = nullptr;
-					g_system->hideOverlay();
+					_system->hideOverlay();
 				}
 				_currentMovie = "";
 			} else if (!_videoDecoder->needsUpdate() && mouseMoved) {
-				g_system->updateScreen();
+				_system->updateScreen();
 			} else if (_videoDecoder->needsUpdate()) {
 				drawScreen();
 			}
-			g_system->delayMillis(5); // Yield to the system
+			_system->delayMillis(5); // Yield to the system
 			continue;
 		}
 
 		if (!_nextSetting.empty()) {
-			removeTimer();
+			clearTimer();
 			debugC(1, kPrivateDebugFunction, "Executing %s", _nextSetting.c_str());
 			clearAreas();
 			_currentSetting = _nextSetting;
@@ -479,27 +487,26 @@ Common::Error PrivateEngine::run() {
 			}
 		}
 
-		g_system->updateScreen();
-		g_system->delayMillis(10);
+		_system->updateScreen();
+		_system->delayMillis(10);
 		if (_subtitles != nullptr) {
 			if (_mixer->isSoundHandleActive(_fgSoundHandle)) {
 				_subtitles->drawSubtitle(_mixer->getElapsedTime(_fgSoundHandle).msecs(), false, _sfxSubtitles);
 			} else {
 				delete _subtitles;
 				_subtitles = nullptr;
-				g_system->hideOverlay();
+				_system->hideOverlay();
 			}
 		}
 	}
-	removeTimer();
 	return Common::kNoError;
 }
 
 void PrivateEngine::ignoreEvents() {
 	Common::Event event;
-	g_system->getEventManager()->pollEvent(event);
-	g_system->updateScreen();
-	g_system->delayMillis(10);
+	_system->getEventManager()->pollEvent(event);
+	_system->updateScreen();
+	_system->delayMillis(10);
 }
 
 void PrivateEngine::initFuncs() {
@@ -621,7 +628,7 @@ void PrivateEngine::completePoliceBust() {
 	// Play audio on the second bust movie
 	if (kPoliceBustVideos[_policeBustMovieIndex] == 2) {
 		Common::String s("global/transiti/audio/spoc02VO.wav");
-		g_private->playSound(s, 1, false, false);
+		g_private->playSound(s, 1, true, false);
 		g_private->changeCursor("default");
 		g_private->waitForSoundToStop();
 	}
@@ -750,10 +757,6 @@ bool PrivateEngine::inMask(Graphics::Surface *surf, Common::Point mousePos) {
 		return false;
 
 	return (surf->getPixel(mousePos.x, mousePos.y) != _transparentColor);
-}
-
-bool PrivateEngine::inBox(const Common::Rect &box, Common::Point mousePos) {
-	return box.contains(mousePos);
 }
 
 bool PrivateEngine::cursorMask(Common::Point mousePos) {
@@ -994,7 +997,7 @@ bool PrivateEngine::selectLocation(const Common::Point &mousePos) {
 	for (auto &it : maps.locationList) {
 		const Private::Symbol *sym = maps.locations.getVal(it);
 		if (sym->u.val) {
-			if (inBox(_locationMasks[i].box, mousePos)) {
+			if (_locationMasks[i].box.contains(mousePos)) {
 				bool diaryPageSet = false;
 				for (uint j = 0; j < _diaryPages.size(); j++) {
 					if (_diaryPages[j].locationID == totalLocations + 1) {
@@ -1512,9 +1515,10 @@ bool PrivateEngine::hasFeature(EngineFeature f) const {
 void PrivateEngine::restartGame() {
 	debugC(1, kPrivateDebugFunction, "restartGame");
 
+	Common::String alternateGameVariableName = getAlternateGameVariable();
 	for (NameList::iterator it = maps.variableList.begin(); it != maps.variableList.end(); ++it) {
 		Private::Symbol *sym = maps.variables.getVal(*it);
-		if (*(sym->name) != getAlternateGameVariable())
+		if (*(sym->name) != alternateGameVariableName)
 			sym->u.val = 0;
 	}
 
@@ -1551,6 +1555,9 @@ void PrivateEngine::restartGame() {
 
 	// Wall Safe
 	initializeWallSafeValue();
+
+	// Timer
+	clearTimer();
 }
 
 Common::Error PrivateEngine::loadGameStream(Common::SeekableReadStream *stream) {
@@ -1906,8 +1913,8 @@ void PrivateEngine::adjustSubtitleSize() {
 		const int MIN_FONT_SIZE = 8;
 		const float BASE_FONT_SIZE_PERCENT = 0.023f;  // ~50px at 2160p
 
-		int16 h = g_system->getOverlayHeight();
-		int16 w = g_system->getOverlayWidth();
+		int16 h = _system->getOverlayHeight();
+		int16 w = _system->getOverlayWidth();
 
 		int bottomMargin = int(h * BOTTOM_MARGIN_PERCENT);
 
@@ -1959,7 +1966,7 @@ void PrivateEngine::loadSubtitles(const Common::Path &path) {
 	if (_subtitles != nullptr) {
 		delete _subtitles;
 		_subtitles = nullptr;
-		g_system->hideOverlay();
+		_system->hideOverlay();
 	}
 
 	_subtitles = new Video::Subtitles();
@@ -1970,8 +1977,8 @@ void PrivateEngine::loadSubtitles(const Common::Path &path) {
 		return;
 	}
 
-	g_system->showOverlay(false);
-	g_system->clearOverlay();
+	_system->showOverlay(false);
+	_system->clearOverlay();
 	adjustSubtitleSize();
 }
 void PrivateEngine::playVideo(const Common::String &name) {
@@ -2053,7 +2060,7 @@ void PrivateEngine::skipVideo() {
 	if (_subtitles != nullptr) {
 		delete _subtitles;
 		_subtitles = nullptr;
-		g_system->hideOverlay();
+		_system->hideOverlay();
 	}
 	_currentMovie = "";
 }
@@ -2068,7 +2075,7 @@ void PrivateEngine::destroyVideo() {
 	if (_subtitles != nullptr) {
 		delete _subtitles;
 		_subtitles = nullptr;
-		g_system->hideOverlay();
+		_system->hideOverlay();
 	}
 }
 
@@ -2101,7 +2108,7 @@ Graphics::Surface *PrivateEngine::decodeImage(const Common::String &name, byte *
 	if (ncolors < 256 || path.toString('/').hasPrefix("intro")) { // For some reason, requires color remapping
 		currentPalette = (byte *) malloc(3*256);
 		drawScreen();
-		g_system->getPaletteManager()->grabPalette(currentPalette, 0, 256);
+		_system->getPaletteManager()->grabPalette(currentPalette, 0, 256);
 		newImage = oldImage->convertTo(_pixelFormat, currentPalette);
 		remapImage(ncolors, oldImage, oldPalette, newImage, currentPalette);
 		*palette = currentPalette;
@@ -2235,7 +2242,7 @@ void PrivateEngine::fillRect(uint32 color, Common::Rect rect) {
 void PrivateEngine::drawScreenFrame(const byte *newPalette) {
 	debugC(1, kPrivateDebugFunction, "%s(..)", __FUNCTION__);
 	remapImage(256, _frameImage, _framePalette, _mframeImage, newPalette);
-	g_system->copyRectToScreen(_mframeImage->getPixels(), _mframeImage->pitch, 0, 0, _screenW, _screenH);
+	_system->copyRectToScreen(_mframeImage->getPixels(), _mframeImage->pitch, 0, 0, _screenW, _screenH);
 }
 
 void PrivateEngine::loadMaskAndInfo(MaskInfo *m, const Common::String &name, int x, int y, bool drawn) {
@@ -2330,12 +2337,12 @@ void PrivateEngine::drawScreen() {
 
 		if (_needToDrawScreenFrame && _videoDecoder->getCurFrame() >= 0) {
 			const byte *videoPalette = _videoDecoder->getPalette();
-			g_system->getPaletteManager()->setPalette(videoPalette, 0, 256);
+			_system->getPaletteManager()->setPalette(videoPalette, 0, 256);
 			drawScreenFrame(videoPalette);
 			_needToDrawScreenFrame = false;
 		} else if (_videoDecoder->hasDirtyPalette()) {
 			const byte *videoPalette = _videoDecoder->getPalette();
-			g_system->getPaletteManager()->setPalette(videoPalette, 0, 256);
+			_system->getPaletteManager()->setPalette(videoPalette, 0, 256);
 
 			if (_mode == 1) {
 				drawScreenFrame(videoPalette);
@@ -2343,15 +2350,15 @@ void PrivateEngine::drawScreen() {
 		}
 
 		// No use of _compositeSurface, we write the frame directly to the screen in the expected position
-		g_system->copyRectToScreen(frame->getPixels(), frame->pitch, center.x, center.y, frame->w, frame->h);
+		_system->copyRectToScreen(frame->getPixels(), frame->pitch, center.x, center.y, frame->w, frame->h);
 	} else {
 		byte newPalette[256 * 3];
 		_compositeSurface->grabPalette(newPalette, 0, 256);
-		g_system->getPaletteManager()->setPalette(newPalette, 0, 256);
+		_system->getPaletteManager()->setPalette(newPalette, 0, 256);
 
 		if (_mode == 1) {
 			// We can reuse newPalette
-			g_system->getPaletteManager()->grabPalette((byte *) &newPalette, 0, 256);
+			_system->getPaletteManager()->grabPalette((byte *) &newPalette, 0, 256);
 			drawScreenFrame((byte *) &newPalette);
 		}
 
@@ -2398,12 +2405,12 @@ void PrivateEngine::drawScreen() {
 
 		Common::Rect w(_origin.x, _origin.y, _screenW - _origin.x, _screenH - _origin.y);
 		Graphics::Surface sa = _compositeSurface->getSubArea(w);
-		g_system->copyRectToScreen(sa.getPixels(), sa.pitch, _origin.x, _origin.y, sa.w, sa.h);
+		_system->copyRectToScreen(sa.getPixels(), sa.pitch, _origin.x, _origin.y, sa.w, sa.h);
 	}
 
 	if (_subtitles && _videoDecoder && !_videoDecoder->isPaused())
 		_subtitles->drawSubtitle(_videoDecoder->getTime(), false, _sfxSubtitles);
-	g_system->updateScreen();
+	_system->updateScreen();
 }
 
 bool PrivateEngine::getRandomBool(uint p) {
@@ -2467,18 +2474,37 @@ Common::String PrivateEngine::getRandomPhoneClip(const char *clip, int i, int j)
 	return Common::String::format("%s%02d", clip, r);
 }
 
-// Timers
-static void timerCallback(void *refCon) {
-	g_private->removeTimer();
-	g_private->_nextSetting = *(Common::String *)refCon;
+// Timer
+
+void PrivateEngine::setTimer(uint32 delay, const Common::String &setting, const Common::String &skipSetting) {
+	_timerSetting = setting;
+	_timerSkipSetting = skipSetting;
+	_timerStartTime = _system->getMillis();
+	_timerDelay = delay;
 }
 
-bool PrivateEngine::installTimer(uint32 delay, Common::String *ns) {
-	return g_system->getTimerManager()->installTimerProc(&timerCallback, delay, ns, "timerCallback");
+void PrivateEngine::clearTimer() {
+	_timerSetting.clear();
+	_timerSkipSetting.clear();
+	_timerStartTime = 0;
+	_timerDelay = 0;
 }
 
-void PrivateEngine::removeTimer() {
-	g_system->getTimerManager()->removeTimerProc(&timerCallback);
+void PrivateEngine::skipTimer() {
+	_nextSetting = _timerSkipSetting;
+	clearTimer();
+}
+
+void PrivateEngine::checkTimer() {
+	if (_timerSetting.empty()) {
+		return;
+	}
+	
+	uint32 now = _system->getMillis();
+	if (now - _timerStartTime >= _timerDelay) {
+		_nextSetting = _timerSetting;
+		clearTimer();
+	}
 }
 
 // Diary

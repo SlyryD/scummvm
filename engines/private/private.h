@@ -284,7 +284,6 @@ public:
 	void drawMask(Graphics::Surface *);
 	void fillRect(uint32, Common::Rect);
 	bool inMask(Graphics::Surface *, Common::Point);
-	bool inBox(const Common::Rect &box, Common::Point mousePos);
 	uint32 _transparentColor;
 	Common::Rect _screenRect;
 	Common::String _framePath;
@@ -441,9 +440,15 @@ public:
 	// Random values
 	bool getRandomBool(uint);
 
-	// Timers
-	bool installTimer(uint32, Common::String *);
-	void removeTimer();
+	// Timer
+	Common::String _timerSetting;
+	Common::String _timerSkipSetting;
+	uint32 _timerStartTime;
+	uint32 _timerDelay;
+	void setTimer(uint32 duration, const Common::String &setting, const Common::String &skipSetting);
+	void clearTimer();
+	void skipTimer();
+	void checkTimer();
 
 	// VM objects
 	RectList _rects; // created by fCRect
