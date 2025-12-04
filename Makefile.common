@@ -132,15 +132,16 @@ $(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
-# Build randomizer library with RANDOMIZER_MODULE_OBJS instead of MODULE_OBJS
-base/libbase_randomizer.a: $(RANDOMIZER_MODULE_OBJS)
+# Build randomizer library with RANDOMIZER_MODULE_OBJS instead of MODULE_OBJS (excluding version.o)
+RANDOMIZER_MODULE_OBJS_FOR_LIB := $(filter-out base/version.o,$(RANDOMIZER_MODULE_OBJS))
+base/libbase_randomizer.a: $(RANDOMIZER_MODULE_OBJS_FOR_LIB)
 	$(QUIET)-$(RM) $@
 	$(QUIET_AR)$(AR) $@ $+
 	$(QUIET_RANLIB)$(RANLIB) $@
 	$(QUIET)$(LS) $@
 
-# Build RANDOMIZER_OBJS list by replacing base/libbase.a with base/libbase_randomizer.a
-RANDOMIZER_OBJS := $(filter-out base/libbase.a,$(OBJS)) base/libbase_randomizer.a randomizer/librandomizer.a
+# Build RANDOMIZER_OBJS list by replacing base/libbase.a with base/libbase_randomizer.a and adding version.o
+RANDOMIZER_OBJS := $(subst base/libbase.a,base/libbase_randomizer.a base/version.o,$(OBJS))
 
 # The build rule for the ScummVM Randomizer executable
 $(RANDOMIZER_EXECUTABLE): $(DETECT_OBJS) $(RANDOMIZER_OBJS)
