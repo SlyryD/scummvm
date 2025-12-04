@@ -139,15 +139,8 @@ $(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
-$(MODULE_LIB_BASE_RANDOMIZER): $(MODULE_OBJS_BASE_RANDOMIZER)
-	$(QUIET)-$(RM) $@
-	$(QUIET_AR)$(AR) $@ $+
-	$(QUIET_RANLIB)$(RANLIB) $@
-	$(QUIET)$(LS) $@
-
-# The build rule for the ScummVM Randomizer executable
-# Use all standard OBJS except replace base/libbase.a with base/libbase_randomizer.a
-$(EXECUTABLE_RANDOMIZER): $(DETECT_OBJS) $(patsubst $(MODULE_LIB-base),$(MODULE_LIB_BASE_RANDOMIZER),$(OBJS))
+# The build rule for the Randomizer executable
+$(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
