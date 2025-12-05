@@ -5,10 +5,10 @@
 # The default build target: just build the scummvm executable
 ######################################################################
 
-all: $(EXECUTABLE) $(EXECUTABLE_RANDOMIZER) plugins
+all: $(EXECUTABLE) plugins
 
 ifdef SPLIT_DWARF
-all: $(EXECUTABLE).dwp $(EXECUTABLE_RANDOMIZER).dwp
+all: $(EXECUTABLE).dwp
 endif
 
 # Randomizer build target
@@ -139,8 +139,44 @@ $(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
+######################################################################
+# Randomizer build - builds randomizer versions of specific engines
+######################################################################
+
+# List of engines that support randomizer (add more as needed)
+ENGINES_RANDOMIZER := scumm
+
+# Generate variables for each randomizer engine
+define ENGINE_TEMPLATE_RANDOMIZER
+$(1)_LIB_RANDOMIZER := engines/$(1)/lib$(1)_randomizer.a
+$(1)_OBJS_RANDOMIZER := $$(patsubst engines/$(1)/%.o,engines/$(1)/%_randomizer.o,$$(MODULE_OBJS-engines/$(1)))
+
+# Pattern rule to compile $(1) sources with RANDOMIZER flag
+engines/$(1)/%_randomizer.o: $$(srcdir)/engines/$(1)/%.cpp
+	$$(QUIET)$$(MKDIR) $$(*D)/$$(DEPDIR)
+	$$(QUIET_CXX)$$(CXX) $$(CXX_UPDATE_DEP_FLAG) $$(CXXFLAGS) $$(CPPFLAGS) -DRANDOMIZER -c $$< -o $$@
+
+# Build lib$(1)_randomizer.a
+$$($(1)_LIB_RANDOMIZER): $$($(1)_OBJS_RANDOMIZER)
+	$$(QUIET)-$$(RM) $$@
+	$$(QUIET_AR)$$(AR) $$@ $$+
+	$$(QUIET_RANLIB)$$(RANLIB) $$@
+	$$(QUIET)$$(LS) $$@
+endef
+
+# Generate rules for each engine
+$(foreach engine,$(ENGINES_RANDOMIZER),$(eval $(call ENGINE_TEMPLATE_RANDOMIZER,$(engine))))
+
+# Collect all randomizer libraries
+LIBS_RANDOMIZER := $(foreach engine,$(ENGINES_RANDOMIZER),$($(engine)_LIB_RANDOMIZER))
+ALL_OBJS_RANDOMIZER := $(foreach engine,$(ENGINES_RANDOMIZER),$($(engine)_OBJS_RANDOMIZER))
+
+# Build OBJS list with randomizer libraries substituted
+OBJS_RANDOMIZER := $(OBJS)
+$(foreach engine,$(ENGINES_RANDOMIZER),$(eval OBJS_RANDOMIZER := $$(patsubst engines/$(engine)/lib$(engine).a,$$($(engine)_LIB_RANDOMIZER),$$(OBJS_RANDOMIZER))))
+
 # The build rule for the Randomizer executable
-$(EXECUTABLE): $(DETECT_OBJS) $(OBJS)
+$(EXECUTABLE_RANDOMIZER): $(DETECT_OBJS) $(OBJS_RANDOMIZER)
 	+$(QUIET_LINK)$(LD) $(LDFLAGS) $(PRE_OBJS_FLAGS) $+ $(POST_OBJS_FLAGS) $(LIBS) -o $@
 	+$(QUIET)$(LS) $@
 
@@ -164,12 +200,20 @@ distclean: clean clean-devtools clean-test
 clean: clean-toplevel
 clean-toplevel:
 	$(RM_REC) $(DEPDIRS)
-	$(RM) $(OBJS) $(DETECT_OBJS) $(EXECUTABLE) $(EXECUTABLE_RANDOMIZER) $(PLUGIN_OBJ_FILES)
+	$(RM) $(OBJS) $(DETECT_OBJS) $(EXECUTABLE) $(PLUGIN_OBJ_FILES)
+	$(RM) $(ALL_OBJS_RANDOMIZER) $(EXECUTABLE_RANDOMIZER) $(LIBS_RANDOMIZER)
 ifdef SPLIT_DWARF
 	$(RM) $(OBJS:.o=.dwo) $(DETECT_OBJS:.o=.dwo)
 	$(RM) $(EXECUTABLE).dwp $(EXECUTABLE_RANDOMIZER).dwp
+	$(foreach engine,$(ENGINES_RANDOMIZER),$(RM) engines/$(engine)/*_randomizer.dwo;)
 endif
 
+randomizerclean:
+	$(RM) $(ALL_OBJS_RANDOMIZER) $(EXECUTABLE_RANDOMIZER) $(LIBS_RANDOMIZER)
+ifdef SPLIT_DWARF
+	$(RM) $(EXECUTABLE_RANDOMIZER).dwp
+	$(foreach engine,$(ENGINES_RANDOMIZER),$(RM) engines/$(engine)/*_randomizer.dwo;)
+endif
 
 #
 # The build rules for object files.
@@ -480,4 +524,4 @@ DIST_FILES_SOUNDFONTS:=$(addprefix $(srcdir)/dists/soundfonts/,Roland_SC-55.sf2)
 DIST_FILES_DOCS+=$(addprefix $(srcdir)/dists/soundfonts/,COPYRIGHT.Roland_SC-55)
 endif
 
-.PHONY: all clean distclean plugins dist-src clean-toplevel manual randomizer
+.PHONY: all clean distclean plugins dist-src clean-toplevel manual randomizer randomizerclean

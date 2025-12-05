@@ -91,7 +91,7 @@ endif
 #######################################################################
 
 EXECUTABLE  := $(EXEPRE)scummvm$(EXEEXT)
-EXECUTABLE_RANDOMIZER  := $(EXEPRE)scummvm_randomizer$(EXEEXT)
+EXECUTABLE_RANDOMIZER  := randomizer/$(EXEPRE)randomizer$(EXEEXT)
 
 include $(srcdir)/Makefile.common
 

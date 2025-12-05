@@ -12,7 +12,6 @@ lib*.a
 
 /config.log
 /scummvm
-/scummvm_randomizer
 /libscummvm.so
 /scummvm-static
 /ScummVMDockTilePlugin*
@@ -55,6 +54,7 @@ lib*.a
 !/randomizer/input/.gitkeep
 /randomizer/output/*
 !/randomizer/output/.gitkeep
+/randomizer/randomizer
 /*.apk
 /CMakeLists.txt
 
