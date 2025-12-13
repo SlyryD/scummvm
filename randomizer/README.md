@@ -156,4 +156,8 @@ Potential improvements:
 
 ## License
 
-This tool is part of the ScummVM project and follows the same GPL license.
+This tool follows the same GPL license as the ScummVM project.
+
+## Dev Notes
+
+make -j32 && make randomizer -j32

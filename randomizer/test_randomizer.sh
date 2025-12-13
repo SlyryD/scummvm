@@ -42,7 +42,7 @@ make clean
 echo "Building randomizer tool..."
 make all
 
-if [ ! -f "scumm_randomizer_tool" ]; then
+if [ ! -f "randomizer" ]; then
     echo "ERROR: Failed to build randomizer tool"
     exit 1
 fi
@@ -53,7 +53,7 @@ echo "✓ Randomizer tool built successfully"
 echo
 echo "Running randomizer on MONKEY2..."
 echo "================================"
-./scumm_randomizer_tool MONKEY2
+./randomizer --path ./input monkey2
 
 # Check if output files were created
 if [ ! -f "output/MONKEY2.000" ] || [ ! -f "output/MONKEY2.001" ]; then
