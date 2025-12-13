@@ -98,8 +98,8 @@ PrivateEngine::PrivateEngine(OSystem *syst, const ADGameDescription *gd)
 	_policeRadioArea.clear();
 	_AMRadioArea.clear();
 	_phoneArea.clear();
-	// TODO: use this as a default sound for radio
-	_infaceRadioPath = "inface/radio/";
+	_AMRadio.path = "inface/radio/comm_/";
+	_policeRadio.path = "inface/radio/police/";
 	_phonePrefix = "inface/telephon/";
 	_phoneCallSound = "phone.wav";
 
@@ -161,6 +161,11 @@ PrivateEngine::~PrivateEngine() {
 			m.surf->free();
 			delete m.surf;
 		}
+	}
+
+	if (_phoneArea.surf != nullptr) {
+		_phoneArea.surf->free();
+		delete _phoneArea.surf;
 	}
 
 	for (uint i = 0; i < ARRAYSIZE(_safeDigitArea); i++) {
@@ -384,37 +389,44 @@ Common::Error PrivateEngine::run() {
 			case Common::EVENT_LBUTTONDOWN:
 				if (selectDossierNextSuspect(mousePos))
 					break;
-				else if (selectDossierPrevSuspect(mousePos))
+				if (selectDossierPrevSuspect(mousePos))
 					break;
-				else if (selectDossierNextSheet(mousePos))
+				if (selectDossierNextSheet(mousePos))
 					break;
-				else if (selectDossierPrevSheet(mousePos))
+				if (selectDossierPrevSheet(mousePos))
 					break;
-				else if (selectDossierPage(mousePos))
+				if (selectDossierPage(mousePos))
 					break;
-				else if (selectSafeDigit(mousePos))
+				if (selectSafeDigit(mousePos))
 					break;
-				else if (selectDiaryNextPage(mousePos))
+				if (selectDiaryNextPage(mousePos))
 					break;
-				else if (selectDiaryPrevPage(mousePos))
+				if (selectDiaryPrevPage(mousePos))
 					break;
-				else if (selectLocation(mousePos))
+				if (selectLocation(mousePos))
 					break;
-				else if (selectMemory(mousePos)) {
+				if (selectMemory(mousePos)) {
 					_needToDrawScreenFrame = true;
 					break;
 				}
 
+				if (selectPhoneArea(mousePos))
+					 break;
+				if (selectPoliceRadioArea(mousePos))
+					break;
+				if (selectAMRadioArea(mousePos))
+					break;
+				if (selectLoadGame(mousePos))
+					break;
+				if (selectSaveGame(mousePos))
+					break;
+				if (_nextSetting.empty())
+					if (selectMask(mousePos))
+						break;
+				if (_nextSetting.empty())
+					if (selectExit(mousePos))
+						break;
 				selectPauseGame(mousePos);
-				selectPhoneArea(mousePos);
-				selectPoliceRadioArea(mousePos);
-				selectAMRadioArea(mousePos);
-				selectLoadGame(mousePos);
-				selectSaveGame(mousePos);
-				if (_nextSetting.empty())
-					selectMask(mousePos);
-				if (_nextSetting.empty())
-					selectExit(mousePos);
 				break;
 
 			case Common::EVENT_MOUSEMOVE:
@@ -535,6 +547,10 @@ void PrivateEngine::clearAreas() {
 	_saveGameMask.clear();
 	_policeRadioArea.clear();
 	_AMRadioArea.clear();
+	if (_phoneArea.surf != nullptr) {
+		_phoneArea.surf->free();
+		delete _phoneArea.surf;
+	}
 	_phoneArea.clear();
 	_dossierPageMask.clear();
 	_dossierNextSuspectMask.clear();
@@ -623,14 +639,14 @@ void PrivateEngine::completePoliceBust() {
 	// Select the movie for BustMovie() to play
 	_policeBustMovie =
 		Common::String::format("po/animatio/spoc%02dxs.smk",
-			kPoliceBustVideos[g_private->_policeBustMovieIndex]);
+			kPoliceBustVideos[_policeBustMovieIndex]);
 
 	// Play audio on the second bust movie
 	if (kPoliceBustVideos[_policeBustMovieIndex] == 2) {
 		Common::String s("global/transiti/audio/spoc02VO.wav");
-		g_private->playSound(s, 1, true, false);
-		g_private->changeCursor("default");
-		g_private->waitForSoundToStop();
+		playSound(s, 1, true, false);
+		changeCursor("default");
+		waitForSoundToStop();
 	}
 
 	// Cycle to the next movie and wrap around
@@ -640,6 +656,10 @@ void PrivateEngine::completePoliceBust() {
 }
 
 void PrivateEngine::checkPoliceBust() {
+	if (_mode != 1) {
+		return;
+	}
+
 	if (!_policeBustEnabled) {
 		return;
 	}
@@ -678,7 +698,7 @@ void PrivateEngine::checkPoliceBust() {
 
 void PrivateEngine::updateCursor(Common::Point mousePos) {
 	// If a function returns true then it changed the cursor.
-	if (cursorPauseMovie(mousePos)) {
+	if (cursorPhoneArea(mousePos)) {
 		return;
 	}
 	if (cursorSafeDigit(mousePos)) {
@@ -690,13 +710,14 @@ void PrivateEngine::updateCursor(Common::Point mousePos) {
 	if (cursorExit(mousePos)) {
 		return;
 	}
+	if (cursorPauseMovie(mousePos)) {
+		return;
+	}
 	changeCursor("default");
 }
 
 bool PrivateEngine::cursorExit(Common::Point mousePos) {
 	mousePos = mousePos - _origin;
-	if (mousePos.x < 0 || mousePos.y < 0)
-		return false;
 
 	int rs = 100000000;
 	int cs = 0;
@@ -777,7 +798,7 @@ bool PrivateEngine::cursorMask(Common::Point mousePos) {
 }
 
 bool PrivateEngine::cursorPauseMovie(Common::Point mousePos) {
-	if (_mode == 1 && !_policeBustEnabled) {
+	if (_mode == 1) {
 		uint32 tol = 15;
 		Common::Rect window(_origin.x - tol, _origin.y - tol, _screenW - _origin.x + tol, _screenH - _origin.y + tol);
 		if (!window.contains(mousePos)) {
@@ -874,7 +895,7 @@ const char *PrivateEngine::getSymbolName(const char *name, const char *strippedN
 }
 
 void PrivateEngine::selectPauseGame(Common::Point mousePos) {
-	if (_mode == 1 && !_policeBustEnabled) {
+	if (_mode == 1) {
 		uint32 tol = 15;
 		Common::Rect window(_origin.x - tol, _origin.y - tol, _screenW - _origin.x + tol, _screenH - _origin.y + tol);
 		if (!window.contains(mousePos)) {
@@ -890,6 +911,9 @@ void PrivateEngine::selectPauseGame(Common::Point mousePos) {
 					_videoDecoder->pauseVideo(true);
 					_pausedVideo = _videoDecoder;
 				}
+
+				_pausedBackgroundSound = _backgroundSound;
+
 				_compositeSurface->fillRect(_screenRect, 0);
 				_compositeSurface->setPalette(_framePalette, 0, 256);
 				_origin = Common::Point(kOriginZero[0], kOriginZero[1]);
@@ -915,20 +939,22 @@ void PrivateEngine::resumeGame() {
 		_videoDecoder->pauseVideo(false);
 		_needToDrawScreenFrame = true;
 	}
+
+	if (!_pausedBackgroundSound.empty()) {
+		playSound(_pausedBackgroundSound, 0, false, true);
+		_pausedBackgroundSound.clear();
+	}
 }
 
 
-void PrivateEngine::selectExit(Common::Point mousePos) {
+bool PrivateEngine::selectExit(Common::Point mousePos) {
 	mousePos = mousePos - _origin;
-	if (mousePos.x < 0 || mousePos.y < 0)
-		return;
 
 	Common::String ns = "";
 	int rs = 100000000;
-	int cs = 0;
 	for (ExitList::const_iterator it = _exits.begin(); it != _exits.end(); ++it) {
 		const ExitInfo &e = *it;
-		cs = e.rect.width() * e.rect.height();
+		int cs = e.rect.width() * e.rect.height();
 		//debug("Testing exit %s %d", e.nextSetting->c_str(), cs);
 		if (e.rect.contains(mousePos)) {
 			//debug("Inside! %d %d", cs, rs);
@@ -946,13 +972,17 @@ void PrivateEngine::selectExit(Common::Point mousePos) {
 		}
 	}
 	if (!ns.empty()) {
-		_numberOfClicks--; // count click only if it hits a hotspot
+		if (_mode == 1) {
+			_numberOfClicks--; // count click only if it hits a hotspot
+		}
 		_nextSetting = ns;
 		_highlightMasks = false;
+		return true;
 	}
+	return false;
 }
 
-void PrivateEngine::selectMask(Common::Point mousePos) {
+bool PrivateEngine::selectMask(Common::Point mousePos) {
 	Common::String ns;
 	for (MaskList::const_iterator it = _masks.begin(); it != _masks.end(); ++it) {
 		const MaskInfo &m = *it;
@@ -981,10 +1011,14 @@ void PrivateEngine::selectMask(Common::Point mousePos) {
 		}
 	}
 	if (!ns.empty()) {
-		_numberOfClicks--; // count click only if it hits a hotspot
+		if (_mode == 1) {
+			_numberOfClicks--; // count click only if it hits a hotspot
+		}
 		_nextSetting = ns;
 		_highlightMasks = false;
+		return true;
 	}
+	return false;
 }
 
 bool PrivateEngine::selectLocation(const Common::Point &mousePos) {
@@ -1033,6 +1067,8 @@ bool PrivateEngine::selectDiaryNextPage(Common::Point mousePos) {
 		_currentDiaryPage++;
 		_nextSetting = _diaryNextPageExit.nextSetting;
 
+		playSound(getPaperShuffleSound(), 1, false, false);
+
 		return true;
 	}
 
@@ -1047,6 +1083,8 @@ bool PrivateEngine::selectDiaryPrevPage(Common::Point mousePos) {
 	if (_diaryPrevPageExit.rect.contains(mousePos)) {
 		_currentDiaryPage--;
 		_nextSetting = _diaryPrevPageExit.nextSetting;
+
+		playSound(getPaperShuffleSound(), 1, false, false);
 
 		return true;
 	}
@@ -1237,65 +1275,26 @@ void PrivateEngine::removeRandomInventory() {
 	}
 }
 
-void PrivateEngine::selectAMRadioArea(Common::Point mousePos) {
+bool PrivateEngine::selectAMRadioArea(Common::Point mousePos) {
 	if (_AMRadioArea.surf == nullptr)
-		return;
-
-	if (_AMRadio.empty())
-		return;
+		return false;
 
 	if (inMask(_AMRadioArea.surf, mousePos)) {
-		Common::String sound = _infaceRadioPath + "comm_/" + _AMRadio.back() + ".wav";
-		playSound(sound, 1, false, false);
-		_AMRadio.pop_back();
+		playRadio(_AMRadio, false);
+		return true;
 	}
+	return false;
 }
 
-void PrivateEngine::selectPoliceRadioArea(Common::Point mousePos) {
+bool PrivateEngine::selectPoliceRadioArea(Common::Point mousePos) {
 	if (_policeRadioArea.surf == nullptr)
-		return;
-
-	if (_policeRadio.empty())
-		return;
+		return false;
 
 	if (inMask(_policeRadioArea.surf, mousePos)) {
-		Common::String sound = _infaceRadioPath + "police/" + _policeRadio.back() + ".wav";
-		playSound(sound, 1, false, false);
-		_policeRadio.pop_back();
+		playRadio(_policeRadio, true);
+		return true;
 	}
-}
-
-void PrivateEngine::checkPhoneCall() {
-	if (_phoneArea.surf == nullptr)
-		return;
-
-	if (_phone.empty())
-		return;
-
-	if (!_mixer->isSoundHandleActive(_fgSoundHandle))
-		playSound(_phonePrefix + _phoneCallSound, 1, false, false);
-}
-
-void PrivateEngine::selectPhoneArea(Common::Point mousePos) {
-	if (_phoneArea.surf == nullptr)
-		return;
-
-	if (_phone.empty())
-		return;
-
-	if (inMask(_phoneArea.surf, mousePos)) {
-		const PhoneInfo &i = _phone.front();
-		// -100 indicates that the variable should be decremented
-		if (i.val == -100) {
-			setSymbol(i.flag, i.flag->u.val - 1);
-		} else {
-			setSymbol(i.flag, i.val);
-		}
-		Common::String sound = _phonePrefix + i.sound + ".wav";
-		playSound(sound, 1, true, false);
-		_phone.pop_front();
-		_nextSetting = getListenToPhoneSetting();
-	}
+	return false;
 }
 
 void PrivateEngine::addDossier(Common::String &page1, Common::String &page2) {
@@ -1415,6 +1414,383 @@ bool PrivateEngine::selectDossierPrevSuspect(Common::Point mousePos) {
 	return false;
 }
 
+void PrivateEngine::addRadioClip(
+	Radio &radio, const Common::String &name, int priority,
+	int disabledPriority1, bool exactPriorityMatch1,
+	int disabledPriority2, bool exactPriorityMatch2,
+	const Common::String &flagName, int flagValue) {
+
+	// lookup radio clip by name
+	RadioClip *clip = nullptr;
+	for (uint i = 0; i < radio.clips.size(); i++) {
+		if (radio.clips[i].name == name) {
+			clip = &radio.clips[i];
+			break;
+		}
+	}
+
+	// add clip if new
+	if (clip == nullptr) {
+		RadioClip newClip;
+		newClip.name = name;
+		newClip.played = false;
+		newClip.priority = priority;
+		newClip.disabledPriority1 = disabledPriority1;
+		newClip.exactPriorityMatch1 = exactPriorityMatch1;
+		newClip.disabledPriority2 = disabledPriority2;
+		newClip.exactPriorityMatch2 = exactPriorityMatch2;
+		newClip.flagName = flagName;
+		newClip.flagValue = flagValue;
+		radio.clips.push_back(newClip);
+		clip = &radio.clips[radio.clips.size() - 1];
+	}
+
+	// disable other clips based on the clip's priority
+	disableRadioClips(radio, clip->priority);
+}
+
+void PrivateEngine::initializeAMRadioChannels(uint clipCount) {
+	Radio &radio = _AMRadio;
+	assert(clipCount < radio.clips.size());
+
+	// clear all channels
+	for (uint i = 0; i < ARRAYSIZE(radio.channels); i++) {
+		radio.channels[i] = -1;
+	}
+
+	// build array of playable clip indexes (up to clipCount)
+	Common::Array<uint> playableClips;
+	for (uint i = 0; i < clipCount; i++) {
+		if (!radio.clips[i].played) {
+			playableClips.push_back(i);
+		}
+	}
+
+	// place the highest priority clips in the channels (up to two)
+	uint channelCount;
+	switch (playableClips.size()) {
+	case 0: channelCount = 0; break;
+	case 1: channelCount = 1; break;
+	case 2: channelCount = 1; break;
+	case 3: channelCount = 1; break;
+	default: channelCount = 2; break;
+	}
+	uint channel = 0;
+	uint end = 0;
+	while (channel < channelCount) {
+		channel++;
+		if (channel < playableClips.size()) {
+			uint start = channel;
+			uint remainingClips = playableClips.size() - start;
+			while (remainingClips--) {
+				RadioClip &clip1 = radio.clips[playableClips[start]];
+				RadioClip &clip2 = radio.clips[playableClips[end]];
+				if (clip1.priority < clip2.priority) {
+					SWAP(playableClips[start], playableClips[end]);
+				}
+				start++;
+			}
+		}
+		radio.channels[channel - 1] = playableClips[end];
+		end++;
+	}
+
+	// build another array of playable clip indexes, starting at clipCount
+	Common::Array<uint> morePlayableClips;
+	for (uint i = clipCount; i < radio.clips.size(); i++) {
+		if (!radio.clips[i].played) {
+			morePlayableClips.push_back(i);
+		}
+	}
+
+	// shuffle second array
+	if (!morePlayableClips.empty()) {
+		for (uint i = morePlayableClips.size() - 1; i > 0; i--) {
+			uint n = _rnd->getRandomNumber(i);
+			SWAP(morePlayableClips[i], morePlayableClips[n]);
+		}
+	}
+
+	// install some of the clips from the second array into channels, starting
+	// at the end of the channel array to keep the highest priority clips.
+	uint copyCount = morePlayableClips.size();
+	if (playableClips.size() <= 3) { // not morePlayableClips
+		copyCount = MIN<uint>(copyCount, 2);
+	} else {
+		copyCount = MIN<uint>(copyCount, 1);
+	}
+	for (uint i = 0; i < copyCount; i++) {
+		radio.channels[2 - i] = morePlayableClips[i];
+	}
+
+	// shuffle channels
+	for (uint i = ARRAYSIZE(radio.channels) - 1; i > 0; i--) {
+		uint n = _rnd->getRandomNumber(i);
+		SWAP(radio.channels[i], radio.channels[n]);
+	}
+}
+
+void PrivateEngine::initializePoliceRadioChannels() {
+	Radio &radio = _policeRadio;
+
+	// clear all channels
+	for (uint i = 0; i < ARRAYSIZE(radio.channels); i++) {
+		radio.channels[i] = -1;
+	}
+
+	// build array of playable clip indexes
+	Common::Array<uint> playableClips;
+	for (uint i = 0; i < radio.clips.size(); i++) {
+		if (!radio.clips[i].played) {
+			playableClips.push_back(i);
+		}
+	}
+
+	// place the highest priority clips in the channels (up to three)
+	uint channelCount = MIN<uint>(playableClips.size(), ARRAYSIZE(radio.channels));
+	uint channel = 0;
+	uint end = 0;
+	while (channel < channelCount) {
+		channel++;
+		if (channel < playableClips.size()) {
+			uint start = channel;
+			uint remainingClips = playableClips.size() - start;
+			while (remainingClips--) {
+				RadioClip &clip1 = radio.clips[playableClips[start]];
+				RadioClip &clip2 = radio.clips[playableClips[end]];
+				if (clip1.priority < clip2.priority) {
+					SWAP(playableClips[start], playableClips[end]);
+				}
+				start++;
+			}
+		}
+		radio.channels[channel - 1] = playableClips[end];
+		end++;
+	}
+}
+
+void PrivateEngine::disableRadioClips(Radio &radio, int priority) {
+	for (uint i = 0; i < radio.clips.size(); i++) {
+		RadioClip &clip = radio.clips[i];
+		if (clip.played) {
+			continue;
+		}
+
+		if (clip.disabledPriority1) {
+			if ((clip.exactPriorityMatch1 && priority == clip.disabledPriority1) ||
+				(!clip.exactPriorityMatch1 && priority <= clip.disabledPriority1)) {
+				clip.played = true;
+			}
+		}
+		if (clip.disabledPriority2) {
+			if ((clip.exactPriorityMatch2 && priority == clip.disabledPriority2) ||
+				(!clip.exactPriorityMatch2 && priority <= clip.disabledPriority2)) {
+				clip.played = true;
+			}
+		}
+	}
+}
+
+void PrivateEngine::playRadio(Radio &radio, bool randomlyDisableClips) {
+	// search channels for first available clip
+	for (uint i = 0; i < ARRAYSIZE(radio.channels); i++) {
+		// skip empty channels
+		if (radio.channels[i] == -1) {
+			continue;
+		}
+
+		// verify that clip hasn't been already been played
+		RadioClip &clip = radio.clips[radio.channels[i]];
+		radio.channels[i] = -1;
+		if (clip.played) {
+			continue;
+		}
+
+		// the police radio randomly disables clips (!)
+		if (randomlyDisableClips) {
+			uint r = _rnd->getRandomNumber(9);
+			if (r < 3) {
+				clip.played = true;
+				break; // play radio.wav
+			}
+		}
+
+		// play the clip
+		Common::String sound = radio.path + clip.name + ".wav";
+		playSound(sound, 1, false, false);
+		clip.played = true;
+		if (!clip.flagName.empty()) {
+			Symbol *flag = maps.lookupVariable(&(clip.flagName));
+			setSymbol(flag, clip.flagValue);
+		}
+		return;
+	}
+
+	// play default radio sound
+	playSound("inface/radio/radio.wav", 1, false, false);
+}
+
+void PrivateEngine::addPhone(const Common::String &name, bool once, int startIndex, int endIndex, const Common::String &flagName, int flagValue) {
+	// lookup phone clip by name and index range
+	PhoneInfo *phone = nullptr;
+	for (PhoneList::iterator it = _phones.begin(); it != _phones.end(); ++it) {
+		if (it->name == name && it->startIndex == startIndex && it->endIndex == endIndex) {
+			phone = &(*it);
+			break;
+		}
+	}
+
+	// add or update phone clip
+	if (phone == nullptr) {
+		PhoneInfo newPhone;
+		newPhone.name = name;
+		newPhone.once = once;
+		newPhone.startIndex = startIndex;
+		newPhone.endIndex = endIndex;
+		newPhone.flagName = flagName;
+		newPhone.flagValue = flagValue;
+		newPhone.status = kPhoneStatusWaiting;
+		newPhone.callCount = 0;
+		newPhone.soundIndex = 0;
+		// add single clip or a range of clips that occur in a random order
+		if (startIndex == endIndex) {
+			Common::String sound = name + ".wav";
+			newPhone.sounds.push_back(sound);
+		} else {
+			for (int i = startIndex; i <= endIndex; i++) {
+				Common::String sound = Common::String::format("%s%02d.wav", name.c_str(), i);
+				newPhone.sounds.push_back(sound);
+			}
+			// shuffle
+			for (uint i = newPhone.sounds.size() - 1; i > 0; i--) {
+				uint n = _rnd->getRandomNumber(i);
+				SWAP<Common::String>(newPhone.sounds[i], newPhone.sounds[n]);
+			}
+		}
+		_phones.push_back(newPhone);
+	} else {
+		// update an available phone clip's state if its sounds haven't been played yet
+		if (phone->soundIndex < phone->sounds.size()) {
+			// reset the call count
+			phone->callCount = 0;
+
+			// the first PhoneClip() call does not cause the phone clip to ring,
+			// but the second call does. if a phone clip has multiple sounds and
+			// one has been answered then its status changes to waiting so that
+			// the next PhoneClip() call will make the next sound available.
+			if (phone->status == kPhoneStatusWaiting) {
+				phone->status = kPhoneStatusAvailable;
+			} else if (phone->status == kPhoneStatusAnswered) {
+				phone->status = kPhoneStatusWaiting;
+			}
+		}
+	}
+}
+
+void PrivateEngine::initializePhoneOnDesktop() {
+	// any phone clips that were missed, or left ringing, are available
+	// unless they are phone clips that only occur once.
+	for (PhoneList::iterator it = _phones.begin(); it != _phones.end(); ++it) {
+		if (!it->once && (it->status == kPhoneStatusCalling || it->status == kPhoneStatusMissed)) {
+			it->status = kPhoneStatusAvailable;
+		}
+	}
+}
+
+void PrivateEngine::checkPhoneCall() {
+	if (_phoneArea.surf == nullptr) {
+		return;
+	}
+
+	if (isSoundActive()) {
+		return;
+	}
+
+	// any phone clips that were calling have been missed
+	for (PhoneList::iterator it = _phones.begin(); it != _phones.end(); ++it) {
+		if (it->status == kPhoneStatusCalling) {
+			it->status = kPhoneStatusMissed;
+		}
+	}
+
+	// get the next available phone clip
+	PhoneInfo *phone = nullptr;
+	for (PhoneList::iterator it = _phones.begin(); it != _phones.end(); ++it) {
+		if (it->status == kPhoneStatusAvailable &&
+			it->soundIndex < it->sounds.size() &&
+			it->callCount < (it->once ? 1 : 3)) {
+			phone = &(*it);
+			break;
+		}
+	}
+	if (phone == nullptr) {
+		return;
+	}
+
+	phone->status = kPhoneStatusCalling;
+	phone->callCount++;
+	playPhoneCallSound();
+}
+
+bool PrivateEngine::cursorPhoneArea(Common::Point mousePos) {
+	if (_phoneArea.surf == nullptr) {
+		return false;
+	}
+
+	if (!_mixer->isSoundHandleActive(_phoneCallSoundHandle)) {
+		return false;
+	}
+
+	if (inMask(_phoneArea.surf, mousePos)) {
+		changeCursor(_phoneArea.cursor);
+		return true;
+	}
+
+	return false;
+}
+
+bool PrivateEngine::selectPhoneArea(Common::Point mousePos) {
+	if (_phoneArea.surf == nullptr) {
+		return false;
+	}
+
+	if (!_mixer->isSoundHandleActive(_phoneCallSoundHandle)) {
+		return false;
+	}
+
+	if (inMask(_phoneArea.surf, mousePos)) {
+		// get phone clip to answer
+		PhoneInfo *phone = nullptr;
+		for (PhoneList::iterator it = _phones.begin(); it != _phones.end(); ++it) {
+			if (it->status == kPhoneStatusCalling) {
+				phone = &(*it);
+				break;
+			}
+		}
+		if (phone == nullptr) {
+			return true;
+		}
+
+		// phone clip has been answered, select sound
+		phone->status = kPhoneStatusAnswered;
+		Common::String sound = _phonePrefix + phone->sounds[phone->soundIndex];
+		phone->soundIndex++;
+
+		// -100 indicates that the variable should be decremented
+		Symbol *flag = maps.lookupVariable(&(phone->flagName));
+		if (phone->flagValue == -100) {
+			setSymbol(flag, flag->u.val - 1);
+		} else {
+			setSymbol(flag, phone->flagValue);
+		}
+
+		playSound(sound, 1, true, false);
+		_nextSetting = getListenToPhoneSetting();
+		return true;
+	}
+	return false;
+}
+
 void PrivateEngine::initializeWallSafeValue() {
 	if (isDemo()) {
 		return;
@@ -1453,7 +1829,7 @@ void PrivateEngine::addSafeDigit(uint32 d, Common::Rect *rect) {
 	_safeDigitRect[d] = *rect;
 	int digitValue = getSafeDigit(d);
 	m.surf = loadMask(Common::String::format(_safeNumberPath.c_str(), digitValue), _safeDigitRect[d].left, _safeDigitRect[d].top, true);
-	m.cursor = g_private->getExitCursor();
+	m.cursor = getExitCursor();
 	m.nextSetting = _currentSetting;
 	m.flag1 = nullptr;
 	m.flag2 = nullptr;
@@ -1490,22 +1866,26 @@ void PrivateEngine::incrementSafeDigit(uint32 d) {
 	sym->u.val = (100 * digits[0]) + (10 * digits[1]) + digits[2];
 }
 
-void PrivateEngine::selectLoadGame(Common::Point mousePos) {
+bool PrivateEngine::selectLoadGame(Common::Point mousePos) {
 	if (_loadGameMask.surf == nullptr)
-		return;
+		return false;
 
 	if (inMask(_loadGameMask.surf, mousePos)) {
 		loadGameDialog();
+		return true;
 	}
+	return false;
 }
 
-void PrivateEngine::selectSaveGame(Common::Point mousePos) {
+bool PrivateEngine::selectSaveGame(Common::Point mousePos) {
 	if (_saveGameMask.surf == nullptr)
-		return;
+		return false;
 
 	if (inMask(_saveGameMask.surf, mousePos)) {
 		saveGameDialog();
+		return true;
 	}
+	return false;
 }
 
 bool PrivateEngine::hasFeature(EngineFeature f) const {
@@ -1539,8 +1919,9 @@ void PrivateEngine::restartGame() {
 	// Sounds
 	_AMRadio.clear();
 	_policeRadio.clear();
-	_phone.clear();
-	_playedPhoneClips.clear();
+	_phones.clear();
+	_backgroundSound.clear();
+	_pausedBackgroundSound.clear();
 
 	// Movies
 	_repeatedMovieExit = "";
@@ -1647,30 +2028,48 @@ Common::Error PrivateEngine::loadGameStream(Common::SeekableReadStream *stream) 
 	_policeBustPreviousSetting = stream->readString();
 
 	// Radios
-	size = stream->readUint32LE();
-	_AMRadio.clear();
+	Radio *radios[] = { &_AMRadio, &_policeRadio };
+	for (uint r = 0; r < ARRAYSIZE(radios); r++) {
+		Radio *radio = radios[r];
+		radio->clear();
 
-	for (uint32 i = 0; i < size; ++i) {
-		_AMRadio.push_back(stream->readString());
+		size = stream->readUint32LE();
+		for (uint32 i = 0; i < size; ++i) {
+			RadioClip clip;
+			clip.name = stream->readString();
+			clip.played = (stream->readByte() == 1);
+			clip.priority = stream->readSint32LE();
+			clip.disabledPriority1 = stream->readSint32LE();
+			clip.exactPriorityMatch1 = (stream->readByte() == 1);
+			clip.disabledPriority2 = stream->readSint32LE();
+			clip.exactPriorityMatch2 = (stream->readByte() == 1);
+			clip.flagName = stream->readString();
+			clip.flagValue = stream->readSint32LE();
+			radio->clips.push_back(clip);
+		}
+		for (uint i = 0; i < ARRAYSIZE(radio->channels); i++) {
+			radio->channels[i] = stream->readSint32LE();
+		}
 	}
 
 	size = stream->readUint32LE();
-	_policeRadio.clear();
-
-	for (uint32 i = 0; i < size; ++i) {
-		_policeRadio.push_back(stream->readString());
-	}
-
-	size = stream->readUint32LE();
-	_phone.clear();
-	PhoneInfo p;
-	Common::String name;
+	_phones.clear();
 	for (uint32 j = 0; j < size; ++j) {
-		p.sound = stream->readString();
-		name = stream->readString();
-		p.flag = maps.lookupVariable(&name);
-		p.val = stream->readUint32LE();
-		_phone.push_back(p);
+		PhoneInfo p;
+		p.name = stream->readString();
+		p.once = (stream->readByte() == 1);
+		p.startIndex = stream->readSint32LE();
+		p.endIndex = stream->readSint32LE();
+		p.flagName = stream->readString();
+		p.flagValue = stream->readSint32LE();
+		p.status = (PhoneStatus)stream->readByte();
+		p.callCount = stream->readSint32LE();
+		p.soundIndex = stream->readUint32LE();
+		uint32 phoneSoundsSize = stream->readUint32LE();
+		for (uint32 i = 0; i < phoneSoundsSize; i++) {
+			p.sounds.push_back(stream->readString());
+		}
+		_phones.push_back(p);
 	}
 
 	// Played media
@@ -1679,12 +2078,6 @@ Common::Error PrivateEngine::loadGameStream(Common::SeekableReadStream *stream) 
 	size = stream->readUint32LE();
 	for (uint32 i = 0; i < size; ++i) {
 		_playedMovies.setVal(stream->readString(), true);
-	}
-
-	_playedPhoneClips.clear();
-	size = stream->readUint32LE();
-	for (uint32 i = 0; i < size; ++i) {
-		_playedPhoneClips.setVal(stream->readString(), true);
 	}
 
 	// VSPicture
@@ -1708,6 +2101,13 @@ Common::Error PrivateEngine::loadGameStream(Common::SeekableReadStream *stream) 
 		_nextSetting = getMainDesktopSetting();
 	else
 		_nextSetting = getPauseMovieSetting();
+
+	// Sounds
+	if (meta.version >= 4) {
+		_pausedBackgroundSound = stream->readString();
+	} else {
+		_pausedBackgroundSound.clear();
+	}
 
 	return Common::kNoError;
 }
@@ -1785,24 +2185,48 @@ Common::Error PrivateEngine::saveGameStream(Common::WriteStream *stream, bool is
 	stream->writeByte(0);
 
 	// Radios
-	stream->writeUint32LE(_AMRadio.size());
-	for (SoundList::const_iterator it = _AMRadio.begin(); it != _AMRadio.end(); ++it) {
-		stream->writeString(*it);
-		stream->writeByte(0);
-	}
-	stream->writeUint32LE(_policeRadio.size());
-	for (SoundList::const_iterator it = _policeRadio.begin(); it != _policeRadio.end(); ++it) {
-		stream->writeString(*it);
-		stream->writeByte(0);
+	Radio *radios[] = { &_AMRadio, &_policeRadio };
+	for (uint r = 0; r < ARRAYSIZE(radios); r++) {
+		Radio *radio = radios[r];
+		stream->writeUint32LE(radio->clips.size());
+		for (uint i = 0; i < radio->clips.size(); i++) {
+			RadioClip &clip = radio->clips[i];
+			stream->writeString(clip.name);
+			stream->writeByte(0);
+			stream->writeByte(clip.played ? 1 : 0);
+			stream->writeSint32LE(clip.priority);
+			stream->writeSint32LE(clip.disabledPriority1);
+			stream->writeByte(clip.exactPriorityMatch1 ? 1 : 0);
+			stream->writeSint32LE(clip.disabledPriority2);
+			stream->writeByte(clip.exactPriorityMatch2 ? 1 : 0);
+			stream->writeString(clip.flagName);
+			stream->writeByte(0);
+			stream->writeSint32LE(clip.flagValue);
+		}
+		for (uint i = 0; i < ARRAYSIZE(radio->channels); i++) {
+			stream->writeSint32LE(radio->channels[i]);
+		}
 	}
 
-	stream->writeUint32LE(_phone.size());
-	for (PhoneList::const_iterator it = _phone.begin(); it != _phone.end(); ++it) {
-		stream->writeString(it->sound);
+	// Phone
+	stream->writeUint32LE(_phones.size());
+	for (PhoneList::const_iterator it = _phones.begin(); it != _phones.end(); ++it) {
+		stream->writeString(it->name);
 		stream->writeByte(0);
-		stream->writeString(*it->flag->name);
+		stream->writeByte(it->once ? 1 : 0);
+		stream->writeSint32LE(it->startIndex);
+		stream->writeSint32LE(it->endIndex);
+		stream->writeString(it->flagName);
 		stream->writeByte(0);
-		stream->writeUint32LE(it->val);
+		stream->writeSint32LE(it->flagValue);
+		stream->writeByte(it->status);
+		stream->writeSint32LE(it->callCount);
+		stream->writeUint32LE(it->soundIndex);
+		stream->writeUint32LE(it->sounds.size());
+		for (uint i = 0; i < it->sounds.size(); i++) {
+			stream->writeString(it->sounds[i]);
+			stream->writeByte(0);
+		}
 	}
 
 	// Played media
@@ -1811,12 +2235,6 @@ Common::Error PrivateEngine::saveGameStream(Common::WriteStream *stream, bool is
 
 	stream->writeUint32LE(_playedMovies.size());
 	for (PlayedMediaTable::const_iterator it = _playedMovies.begin(); it != _playedMovies.end(); ++it) {
-		stream->writeString(it->_key);
-		stream->writeByte(0);
-	}
-
-	stream->writeUint32LE(_playedPhoneClips.size());
-	for (PlayedMediaTable::const_iterator it = _playedPhoneClips.begin(); it != _playedPhoneClips.end(); ++it) {
 		stream->writeString(it->_key);
 		stream->writeByte(0);
 	}
@@ -1836,6 +2254,10 @@ Common::Error PrivateEngine::saveGameStream(Common::WriteStream *stream, bool is
 		stream->writeUint32LE(_videoDecoder->getCurFrame());
 	else
 		stream->writeUint32LE(0);
+
+	// Sounds
+	stream->writeString(_pausedBackgroundSound);
+	stream->writeByte(0);
 
 	return Common::kNoError;
 }
@@ -1877,8 +2299,10 @@ void PrivateEngine::playSound(const Common::String &name, uint loops, bool stopO
 	if (background) {
 		_mixer->stopHandle(_bgSoundHandle);
 		sh = &_bgSoundHandle;
+		_backgroundSound = name;
 	} else {
 		_mixer->stopHandle(_fgSoundHandle);
+		_mixer->stopHandle(_phoneCallSoundHandle);
 		sh = &_fgSoundHandle;
 	}
 
@@ -1886,17 +2310,29 @@ void PrivateEngine::playSound(const Common::String &name, uint loops, bool stopO
 	loadSubtitles(path);
 }
 
+void PrivateEngine::playPhoneCallSound() {
+	debugC(1, kPrivateDebugFunction, "%s()", __FUNCTION__);
+
+	Common::Path path = convertPath(_phonePrefix + _phoneCallSound);
+	Common::SeekableReadStream *file = Common::MacResManager::openFileOrDataFork(path);
+	if (!file) {
+		error("unable to find sound file %s", path.toString().c_str());
+	}
+	Audio::SeekableAudioStream *audioStream = Audio::makeWAVStream(file, DisposeAfterUse::YES);
+	_mixer->playStream(Audio::Mixer::kSFXSoundType, &_phoneCallSoundHandle, audioStream, -1, Audio::Mixer::kMaxChannelVolume);
+}
+
 bool PrivateEngine::isSoundActive() {
 	return _mixer->isSoundIDActive(-1);
 }
 
 void PrivateEngine::waitForSoundToStop() {
-	while (g_private->isSoundActive())
-		g_private->ignoreEvents();
+	while (isSoundActive())
+		ignoreEvents();
 
 	uint32 i = 100;
 	while (i--) // one second extra
-		g_private->ignoreEvents();
+		ignoreEvents();
 }
 
 void PrivateEngine::adjustSubtitleSize() {
@@ -2082,11 +2518,12 @@ void PrivateEngine::destroyVideo() {
 void PrivateEngine::stopSound(bool all) {
 	debugC(1, kPrivateDebugFunction, "%s(%d)", __FUNCTION__, all);
 
+	_mixer->stopHandle(_fgSoundHandle);
+	_mixer->stopHandle(_phoneCallSoundHandle);
+
 	if (all) {
-		_mixer->stopHandle(_fgSoundHandle);
 		_mixer->stopHandle(_bgSoundHandle);
-	} else {
-		_mixer->stopHandle(_fgSoundHandle);
+		_backgroundSound.clear();
 	}
 }
 
@@ -2469,11 +2906,6 @@ Common::String PrivateEngine::getLeaveSound() {
 	return _globalAudioPath + sounds[r];
 }
 
-Common::String PrivateEngine::getRandomPhoneClip(const char *clip, int i, int j) {
-	uint r = i + _rnd->getRandomNumber(j - i);
-	return Common::String::format("%s%02d", clip, r);
-}
-
 // Timer
 
 void PrivateEngine::setTimer(uint32 delay, const Common::String &setting, const Common::String &skipSetting) {
@@ -2540,7 +2972,7 @@ void PrivateEngine::loadLocations(const Common::Rect &rect) {
 
 		MaskInfo m;
 		loadMaskAndInfo(&m, s, rect.left + 90, rect.top + offset, true);
-		m.cursor = g_private->getExitCursor();
+		m.cursor = getExitCursor();
 		m.nextSetting = getDiaryMiddleSetting();
 		m.flag1 = nullptr;
 		m.flag2 = nullptr;
@@ -2562,7 +2994,7 @@ void PrivateEngine::loadInventory(uint32 x, const Common::Rect &r1, const Common
 }
 
 void PrivateEngine::loadMemories(const Common::Rect &rect, uint rightPageOffset, uint verticalOffset) {
-	if (_currentDiaryPage < 0)
+	if (_currentDiaryPage < 0 ||_currentDiaryPage >= (int)_diaryPages.size())
 		return;
 
 	Common::String s = Common::String::format("inface/diary/loctabs/drytab%d.bmp", _diaryPages[_currentDiaryPage].locationID);
@@ -2575,7 +3007,7 @@ void PrivateEngine::loadMemories(const Common::Rect &rect, uint rightPageOffset,
 	for (uint i = 0; i < _diaryPages[_currentDiaryPage].memories.size(); i++) {
 		MaskInfo m;
 		m.surf = loadMask(_diaryPages[_currentDiaryPage].memories[i].image, rect.left + horizontalOffset, rect.top + currentVerticalOffset, true);
-		m.cursor = g_private->getExitCursor();
+		m.cursor = getExitCursor();
 		m.nextSetting = getDiaryMiddleSetting();
 		m.flag1 = nullptr;
 		m.flag2 = nullptr;
