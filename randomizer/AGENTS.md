@@ -1,14 +1,23 @@
-# SCUMM Game Randomizer
+# Randomizer
 
-This tool reads SCUMM index (.000) and data (.001) files, randomizes game objects, and writes modified files that can be used with ScummVM.
+This tool reads game files, randomizes game items and entrances, and writes modified files that can be used with ScummVM, any other emulator, or original hardware.
 
 ## Features
 
-- **Object Ownership Randomization**: Changes which rooms or characters own objects
-- **Object State Randomization**: Modifies object states (open/closed, visible/hidden, etc.)
-- **Object Class Randomization**: Carefully modifies object class data while preserving critical flags
+- **Item randomizer**: Picking up an item gives the player a random item
+- **Entrance randomier**: Not yet supported: entering a new area brings you to a random area
+- **Logical randomization**: Preserves game logic to ensure the game is completable
 - **Non-destructive**: Creates new files without modifying originals
-- **SCUMM v5 Support**: Specifically designed for games like Monkey Island 2
+- **SCUMM v5 support**: Specifically designed for games like Monkey Island 2
+- **Archipelago integration**: Not yet supported: Randomizers work with [Archipelago](https://archipelago.gg/)
+
+## Philosophy
+
+Rather than modify the emulators running the games, it's better to modify the game files. This allows the randomized game files to be used on any platform (e.g., original hardware) and doesn't require specific emulators. That way, randomizer players can use their preferred versions of the games on their preferred hardware/emulators.
+
+Randomizers can be created by tapping into each engine. For example, when the RANDOMIZER macro is defined, in `ScummEngine::run()`, instead of calling `ScummEngine::go()` to run the game, it will call `ScummEngine::randomizeGameFiles()`. The idea here is that all the context needed for running the game will be loaded, making it easier to randomize game files. This might be a faulty assumption, but it's what I'm going with now.
+
+Logic files should be a consistent format across all games, so the same randomizer code can be used for all games. The randomizer will use the logic to ensure that the game is still completable. For example, if a key is required to open a door, the randomizer will ensure that the key is placed somewhere accessible before the door.
 
 ## Directory Structure
 
@@ -20,74 +29,39 @@ randomizer/
 │       ├── MONKEY2.001   # Data file
 │       └── ...           # Other game files
 ├── output/               # Generated randomized files
-├── scumm_randomizer.h    # Randomizer class header
-├── scumm_randomizer.cpp  # Randomizer implementation
-├── scumm_randomizer_tool.cpp  # Main entry point
-├── Makefile              # Build system
-├── test_randomizer.sh    # Test script
-└── README.md            # This file
+│   └── MONKEY2/          # Modified game files
+│       ├── MONKEY2.000   # Modified index file
+│       ├── MONKEY2.001   # Randomized data file
+│       └── ...           # Other game files
+├── AGENTS.md             # This file
+├── randomizer            # Randomizer executable
+└── randomizer.dwp        # Randomizer workspace file
 ```
 
 ## Building
 
-1. Ensure you're in the randomizer directory:
-   ```bash
-   cd /home/slyryd/scummvm/randomizer
-   ```
+At the root of the repository, run
 
-2. Build the tool:
-   ```bash
-   make all
-   ```
+```bash
+make randomizer
+```
 
-3. (Optional) Run the test:
-   ```bash
-   make test
-   ```
+## Cleaning
+
+At the root of the repository, run
+
+```bash
+make randomizerclean
+```
 
 ## Usage
 
 ### Basic Usage
 ```bash
-./scumm_randomizer_tool MONKEY2
+./randomizer -p <path to game files> <game id>
 ```
-
-### Custom Directories
-```bash
-./scumm_randomizer_tool MONKEY2 /path/to/input /path/to/output
-```
-
-### Command Line Options
-- `game_id`: SCUMM game identifier (e.g., MONKEY2, INDY3, LOOM)
-- `input_dir`: Directory containing original .000/.001 files (optional)
-- `output_dir`: Directory to write randomized files (optional)
-
-## Testing with ScummVM
-
-1. **Backup Original Files**: Always backup your original game files first!
-
-2. **Copy Randomized Files**: Copy the generated files from `output/` to your ScummVM game directory
-
-3. **Run ScummVM**: Start the game and observe the changes:
-   - Objects may belong to different characters/rooms
-   - Object states may be different (doors open/closed, items visible/hidden)
-   - Game behavior may be significantly altered
 
 ## Technical Details
-
-### What Gets Randomized
-
-1. **Object Ownership** (`_objectOwnerTable`):
-   - Which room or character owns each object
-   - Affects item pickup, visibility, and interactions
-
-2. **Object States** (`_objectStateTable`):
-   - Object state flags (visible, locked, open, etc.)
-   - Affects object appearance and behavior
-
-3. **Object Classes** (`_classData`):
-   - Object classification and properties
-   - Carefully modified to preserve critical functionality
 
 ### What Doesn't Get Randomized
 
@@ -119,11 +93,6 @@ Can potentially be extended to support:
 - Other SCUMM v5/v6 games
 
 ## Troubleshooting
-
-### Build Issues
-- Ensure you have g++ and make installed
-- Check that ScummVM source code is available in the parent directory
-- Verify all header files are accessible
 
 ### Runtime Issues
 - Ensure input .000/.001 files exist and are readable
@@ -161,3 +130,5 @@ This tool follows the same GPL license as the ScummVM project.
 ## Dev Notes
 
 make -j32 && make randomizer -j32
+I think we need to move whole object files (OBIM and OBCD) except for the pickup VERB script
+
