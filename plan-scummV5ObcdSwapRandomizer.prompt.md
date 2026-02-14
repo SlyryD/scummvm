@@ -12,9 +12,11 @@ In `randomizeGameFiles()` in `engines/scumm/randomizer.cpp`, iterate every room 
 
 Fisher-Yates shuffle the catalog indices using `Common::RandomSource`. Each slot *i* receives donor *j*'s non-pickup content.
 
-### 3. Build an opcode-aware bytecode patcher
+### 3. Build an opcode-aware bytecode patcher (incremental)
 
-Implement a function that walks SCUMM V5 bytecode instruction-by-instruction using a parameter-signature table derived from the `setupOpcodes` mapping in `engines/scumm/script_v5.cpp`. For each instruction, use the PARAM bits in the opcode byte to determine parameter sizes (direct literal vs. variable ref). When a **direct word** at a known object-ID parameter position (e.g., PARAM_1 of `setState`/`setOwnerOf`/`pickupObject`/`drawObject`, PARAM_2 of `faceActor`/`walkActorToObject`/`putActorInRoom`) matches the donor's `obj_id`, replace it with the slot's `obj_id`. Skip inline strings (scan to NUL), sub-opcode loops (walk to `0xFF` terminator), and varargs.
+Implement a function that walks SCUMM V5 bytecode instruction-by-instruction using a parameter-signature table derived from the `setupOpcodes` mapping in `engines/scumm/script_v5.cpp`. For each instruction, use the PARAM bits in the opcode byte to determine parameter sizes (direct literal vs. variable ref). When a **direct word** at a known object-ID parameter position (e.g., PARAM_1 of `setState`/`setOwnerOf`/`pickupObject`/`drawObject`, PARAM_2 of `faceActor`/`walkActorToObject`/`putActorInRoom`) matches the donor's `obj_id`, replace it with the slot's `obj_id`.
+
+**Incremental strategy:** Start with common fixed-signature opcodes whose parameter layout is fully known (simple 1–3 param instructions, jumps, assignments). For complex cases — `print`/`printEgo` (inline text + sub-opcodes), `expression` (recursive opcode), `actorOps`/`verbOps`/`roomOps` (sub-opcode loops with variable-length arg lists) — log a warning and **skip patching that entire verb script**, leaving the donor bytecode unmodified for that verb. This keeps the game playable (worst case: a swapped verb script references the wrong object ID, which is a minor glitch) while covering the majority of scripts. Complex opcode families can be added iteratively in follow-up passes.
 
 ### 4. Assemble merged OBCDs
 
@@ -27,7 +29,3 @@ For each room with swapped objects, walk the original ROOM block's children sequ
 ### 6. Write updated `.000` index
 
 Copy the original `.000` to output. Locate the DROO block and overwrite its `roomoffs[]` array (each entry is 4 bytes LE) with the new room offsets from the LOFF table.
-
-## Further Considerations
-
-1. **Opcode walker completeness** — The walker needs ~65 handler signatures. The most complex cases are `print`/`printEgo` (inline text + sub-opcodes), `expression` (recursive opcode), and `actorOps`/`verbOps`/`roomOps` (sub-opcode loops). For a first pass, we could handle the common fixed-signature opcodes and treat unknown/complex opcodes as a warning (log and skip that verb script without patching). Want to go with this incremental approach, or implement the full walker upfront?

@@ -58,7 +58,7 @@ make randomizerclean
 
 ### Basic Usage
 ```bash
-./randomizer -p <path to game files> <game id>
+./randomizer --path=./input/<game id> <game id>
 ```
 
 ## Technical Details
