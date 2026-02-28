@@ -4,7 +4,6 @@
 #include "common/array.h"
 #include "common/random.h"
 #include "common/file.h"
-#include "common/memstream.h"
 #include "common/endian.h"
 #include "common/system.h"
 #include "common/textconsole.h"
@@ -21,50 +20,7 @@ static const byte XOR_KEY = 0x69;
 // pickupObject opcode variants (SCUMM v5)
 // 0x25: both params direct  (obj=word literal, room=byte literal)
 // 0x65: param1 direct, param2 var (obj=word literal, room=var)
-// 0xA5: param1 var, param2 direct (obj=var, room=byte literal)
-// 0xE5: both params var     (obj=var, room=var)
-static const byte PICKUP_DIRECT_OPCODES[] = {0x25, 0x65};
-
-// SCUMM v5 verb ID for "Pick up"
-static const byte VERB_PICKUP = 0x09;
-
-// ============================================================================
-// Helper: Read a raw file from disk (no XOR decryption - that's in ScummFile)
-// ============================================================================
-
-static Common::Array<byte> readRawFile(const Common::Path &path) {
-	Common::File f;
-	if (!f.open(path)) {
-		warning("randomizer: Cannot open %s", path.toString().c_str());
-		return Common::Array<byte>();
-	}
-	uint32 sz = f.size();
-	Common::Array<byte> buf(sz);
-	f.read(buf.data(), sz);
-	f.close();
-	return buf;
-}
-
-// ============================================================================
-// Helper: XOR-decrypt/encrypt a buffer in-place
-// ============================================================================
-
-static void xorBuffer(byte *buf, uint32 size, byte key) {
-	for (uint32 i = 0; i < size; i++)
-		buf[i] ^= key;
-}
-
-// ============================================================================
-// Helper: Read a BE uint32 tag from a buffer
-// ============================================================================
-
-static uint32 readTag(const byte *p) {
-	return READ_BE_UINT32(p);
-}
-
-static uint32 readSize(const byte *p) {
-	return READ_BE_UINT32(p + 4);
-}
+static const byte PICKUP_OPCODES[] = {0x25, 0x65};
 
 // ============================================================================
 // Struct: Catalog entry for an object
@@ -110,25 +66,83 @@ static Common::Array<ObjCatalogEntry::VerbEntry> parseVerbTable(const byte *verb
 }
 
 // ============================================================================
-// Helper: Check if a verb script region contains pickupObject(self)
+// Helper: Validate a candidate pickupObject opcode match.
+//
+//   0x25 (direct obj, direct room): 4 bytes total
+//       byte[0]=op  byte[1..2]=obj_id(LE16)  byte[3]=room(uint8)
+//       room byte must be 0 (current room) or in [1, numRooms].
+//
+//   0x65 (direct obj, variable room): 5 bytes total
+//       byte[0]=op  byte[1..2]=obj_id(LE16)  byte[3..4]=var_idx(LE16)
+//       var_idx must be < 0x4000 (0x2000 = array bit; anything ≥ 0x4000
+//       is not a valid SCUMM v5 variable reference).
 // ============================================================================
 
-static bool verbScriptHasPickupSelf(const byte *verbBlock, uint32 verbBlockSize,
-                                     uint16 scriptOffset, uint16 nextOffset,
-                                     uint16 objId) {
+static bool validatePickupCandidate(const byte *verbBlock, uint16 pos,
+                                     uint16 blockEnd, byte op, int numRooms) {
+	if (op == 0x25) {
+		// Need at least 4 bytes from pos
+		if (pos + 3 >= blockEnd)
+			return false;
+		byte room = verbBlock[pos + 3];
+		return (room == 0 || (room >= 1 && room <= numRooms));
+	} else if (op == 0x65) {
+		// Need at least 5 bytes from pos
+		if (pos + 4 >= blockEnd)
+			return false;
+		uint16 varIdx = READ_LE_UINT16(verbBlock + pos + 3);
+		return (varIdx < 0x4000);
+	}
+	return false;
+}
+
+// ============================================================================
+// Helper: Check if a verb script region contains any pickupObject opcode
+// ============================================================================
+
+static bool verbScriptHasPickup(const byte *verbBlock, uint32 verbBlockSize,
+                                 uint16 scriptOffset, uint16 nextOffset,
+                                 int numRooms) {
 	// scriptOffset and nextOffset are from VERB block start
 	if (scriptOffset >= verbBlockSize) return false;
 	uint16 end = (nextOffset > 0 && nextOffset <= verbBlockSize) ? nextOffset : verbBlockSize;
 
 	for (uint16 i = scriptOffset; i + 2 < end; i++) {
 		byte op = verbBlock[i];
-		if (op == 0x25 || op == 0x65) {
-			uint16 pid = READ_LE_UINT16(verbBlock + i + 1);
-			if (pid == objId)
+		for (int k = 0; k < ARRAYSIZE(PICKUP_OPCODES); k++) {
+			if (op == PICKUP_OPCODES[k] &&
+			    validatePickupCandidate(verbBlock, i, end, op, numRooms))
 				return true;
 		}
 	}
 	return false;
+}
+
+// ============================================================================
+// Helper: Extract all target object IDs from pickupObject opcodes in a
+//         verb script region. For opcodes 0x25 and 0x65 the obj_id is the
+//         LE uint16 immediately following the opcode byte.
+// ============================================================================
+
+static Common::Array<uint16> getPickupTargetObjIds(const byte *verbBlock, uint32 verbBlockSize,
+                                                    uint16 scriptOffset, uint16 nextOffset,
+                                                    int numRooms) {
+	Common::Array<uint16> result;
+	if (scriptOffset >= verbBlockSize) return result;
+	uint16 end = (nextOffset > 0 && nextOffset <= verbBlockSize) ? nextOffset : verbBlockSize;
+
+	for (uint16 i = scriptOffset; i + 2 < end; i++) {
+		byte op = verbBlock[i];
+		for (int k = 0; k < ARRAYSIZE(PICKUP_OPCODES); k++) {
+			if (op == PICKUP_OPCODES[k] &&
+			    validatePickupCandidate(verbBlock, i, end, op, numRooms)) {
+				uint16 targetObjId = READ_LE_UINT16(verbBlock + i + 1);
+				result.push_back(targetObjId);
+				break;
+			}
+		}
+	}
+	return result;
 }
 
 // ============================================================================
@@ -176,7 +190,7 @@ static Common::Array<byte> buildMergedVerbBlock(
 	for (int i = 0; i < (int)slotTable.size(); i++) {
 		uint16 sStart, sEnd;
 		getVerbScriptRange(slotTable, i, slotVerbSize, sStart, sEnd);
-		if (verbScriptHasPickupSelf(slotVerb, slotVerbSize, sStart, sEnd, slot.objId)) {
+		if (verbScriptHasPickup(slotVerb, slotVerbSize, sStart, sEnd, 127 /* numRooms */)) {
 			pickupVerbIds.push_back(slotTable[i].verbId);
 		}
 	}
@@ -305,16 +319,15 @@ static Common::Array<byte> buildMergedObcd(
 }
 
 // ============================================================================
-// Helper: Extract sub-block from a parent block
+// Helper: Extract sub-block from a parent block (standard IFF: tag(4)+size(4)+data)
 // ============================================================================
 
-static Common::Array<byte> extractBlock(const byte *parent, uint32 tag) {
-	uint32 parentSize = readSize(parent);
+static Common::Array<byte> extractBlock(const byte *parent, uint32 parentSize, uint32 tag) {
 	uint32 pos = 8;
-	while (pos < parentSize) {
-		uint32 childTag = readTag(parent + pos);
-		uint32 childSize = readSize(parent + pos);
-		if (childSize == 0) break;
+	while (pos + 8 <= parentSize) {
+		uint32 childTag = READ_BE_UINT32(parent + pos);
+		uint32 childSize = READ_BE_UINT32(parent + pos + 4);
+		if (childSize == 0 || childSize > parentSize - pos) break;
 		if (childTag == tag) {
 			Common::Array<byte> result(childSize);
 			memcpy(result.data(), parent + pos, childSize);
@@ -338,140 +351,123 @@ static Common::String getObjName(const Common::Array<byte> &obnaBlock) {
 // Main implementation
 // ============================================================================
 
+// ============================================================================
+// Helper: XOR-encrypt a buffer in-place
+// ============================================================================
+
+static void xorBuffer(byte *buf, uint32 size, byte key) {
+	for (uint32 i = 0; i < size; i++)
+		buf[i] ^= key;
+}
+
+// ============================================================================
+// Main implementation
+// ============================================================================
+
 Common::Error ScummEngine_v5::randomizeGameFiles() {
 	debug(0, "=== SCUMM V5 OBCD Swap Randomizer ===");
 
 	// ------------------------------------------------------------------
-	// Step 0: Read the raw .001 and .000 files
-	// ------------------------------------------------------------------
-
-	Common::Path inputDir("randomizer/input/MONKEY2/");
-	Common::Path outputDir("randomizer/output/MONKEY2/");
-
-	Common::Array<byte> data001 = readRawFile(Common::Path("randomizer/input/MONKEY2/MONKEY2.001"));
-	Common::Array<byte> data000 = readRawFile(Common::Path("randomizer/input/MONKEY2/MONKEY2.000"));
-
-	if (data001.empty() || data000.empty()) {
-		warning("randomizer: Could not read input files");
-		return Common::kPathNotFile;
-	}
-
-	// XOR-decrypt both files
-	xorBuffer(data001.data(), data001.size(), XOR_KEY);
-	xorBuffer(data000.data(), data000.size(), XOR_KEY);
-
-	debug(0, "Read .001 (%u bytes) and .000 (%u bytes)", data001.size(), data000.size());
-
-	const byte *d001 = data001.data();
-	uint32 d001Size = data001.size();
-
-	// ------------------------------------------------------------------
-	// Step 1: Parse LOFF to get room offsets
-	// ------------------------------------------------------------------
-
-	// LECF at offset 0, LOFF at offset 8
-	if (readTag(d001) != MKTAG('L', 'E', 'C', 'F')) {
-		warning("randomizer: .001 does not start with LECF");
-		return Common::kUnknownError;
-	}
-	if (readTag(d001 + 8) != MKTAG('L', 'O', 'F', 'F')) {
-		warning("randomizer: LOFF not found at offset 8");
-		return Common::kUnknownError;
-	}
-
-	byte numRooms = d001[16];
-	debug(0, "LOFF: %d rooms", numRooms);
-
-	struct RoomOffset {
-		byte roomId;
-		uint32 offset; // offset of ROOM block within .001
-	};
-	Common::Array<RoomOffset> roomOffsets;
-
-	uint32 loffPos = 17;
-	for (int i = 0; i < numRooms; i++) {
-		RoomOffset ro;
-		ro.roomId = d001[loffPos];
-		ro.offset = READ_LE_UINT32(d001 + loffPos + 1);
-		roomOffsets.push_back(ro);
-		loffPos += 5;
-		debug(1, "  Room %d at offset %u", ro.roomId, ro.offset);
-	}
-
-	// ------------------------------------------------------------------
-	// Step 2: Catalog all objects, identify pick-uppable ones
+	// Step 1: Catalog all objects across all rooms using the engine's
+	//         resource loading infrastructure (openRoom, getResourceAddress,
+	//         ResourceIterator, findResource, findResourceData).
 	// ------------------------------------------------------------------
 
 	Common::Array<ObjCatalogEntry> catalog;
-	// Map from obj_id to catalog index for quick lookup
 	Common::HashMap<uint16, int> objToCatalogIdx;
 
-	for (int ri = 0; ri < (int)roomOffsets.size(); ri++) {
-		uint32 roomOff = roomOffsets[ri].offset;
-		byte roomId = roomOffsets[ri].roomId;
+	// Tracks which object IDs are targets of pickupObject opcodes.
+	// Populated during the room scan, then applied to catalog entries afterward.
+	Common::HashMap<uint16, bool> pickuppableObjIds;
 
-		if (roomOff + 8 > d001Size) continue;
-		if (readTag(d001 + roomOff) != MKTAG('R', 'O', 'O', 'M')) continue;
+	debug(0, "Scanning %d rooms for objects...", _numRooms);
 
-		uint32 roomSize = readSize(d001 + roomOff);
+	for (int roomId = 1; roomId < _numRooms; roomId++) {
+		// Skip rooms that don't exist in the data files
+		if (_res->_types[rtRoom][roomId]._roomoffs == RES_INVALID_OFFSET)
+			continue;
+		if (_res->_types[rtRoom][roomId]._roomoffs == 0 && roomId != 0)
+			continue;
 
-		// Walk children of ROOM to find OBCD blocks
-		uint32 pos = roomOff + 8;
-		uint32 roomEnd = roomOff + roomSize;
+		// Load the room resource via the engine (handles file I/O, XOR decryption, etc.)
+		const byte *roomPtr = getResourceAddress(rtRoom, roomId);
+		if (!roomPtr)
+			continue;
 
-		while (pos + 8 <= roomEnd) {
-			uint32 childTag = readTag(d001 + pos);
-			uint32 childSize = readSize(d001 + pos);
-			if (childSize == 0 || childSize > roomEnd - pos) break;
+		// Get object count from RMHD
+		const byte *rmhd = findResourceData(MKTAG('R', 'M', 'H', 'D'), roomPtr);
+		if (!rmhd)
+			continue;
+		int numObjects = READ_LE_UINT16(&((const RoomHeader *)rmhd)->old.numObjects);
+		if (numObjects == 0)
+			continue;
 
-			if (childTag == MKTAG('O', 'B', 'C', 'D')) {
-				const byte *obcdPtr = d001 + pos;
+		// Iterate OBCD blocks using ResourceIterator
+		ResourceIterator obcds(roomPtr, false);
+		for (int oi = 0; oi < numObjects; oi++) {
+			const byte *obcdPtr = obcds.findNext(MKTAG('O', 'B', 'C', 'D'));
+			if (!obcdPtr)
+				break;
 
-				ObjCatalogEntry entry;
-				entry.roomId = roomId;
-				entry.fullObcd.resize(childSize);
-				memcpy(entry.fullObcd.data(), obcdPtr, childSize);
+			uint32 obcdSize = READ_BE_UINT32(obcdPtr + 4);
 
-				// Extract sub-blocks
-				entry.cdhdBlock = extractBlock(obcdPtr, MKTAG('C', 'D', 'H', 'D'));
-				entry.verbBlock = extractBlock(obcdPtr, MKTAG('V', 'E', 'R', 'B'));
-				entry.obnaBlock = extractBlock(obcdPtr, MKTAG('O', 'B', 'N', 'A'));
+			ObjCatalogEntry entry;
+			entry.roomId = (byte)roomId;
 
-				if (entry.cdhdBlock.size() >= 10) {
-					entry.objId = READ_LE_UINT16(entry.cdhdBlock.data() + 8);
-				}
+			// Copy the full OBCD block
+			entry.fullObcd.resize(obcdSize);
+			memcpy(entry.fullObcd.data(), obcdPtr, obcdSize);
 
-				entry.name = getObjName(entry.obnaBlock);
+			// Extract sub-blocks (CDHD, VERB, OBNA)
+			entry.cdhdBlock = extractBlock(obcdPtr, obcdSize, MKTAG('C', 'D', 'H', 'D'));
+			entry.verbBlock = extractBlock(obcdPtr, obcdSize, MKTAG('V', 'E', 'R', 'B'));
+			entry.obnaBlock = extractBlock(obcdPtr, obcdSize, MKTAG('O', 'B', 'N', 'A'));
 
-				// Check if pick-uppable: has verb 0x09 with pickupObject(self)
-				if (!entry.verbBlock.empty()) {
-					entry.verbTable = parseVerbTable(entry.verbBlock.data());
-
-					for (int vi = 0; vi < (int)entry.verbTable.size(); vi++) {
-						if (entry.verbTable[vi].verbId == VERB_PICKUP) {
-							uint16 sStart, sEnd;
-							getVerbScriptRange(entry.verbTable, vi,
-							                   entry.verbBlock.size(), sStart, sEnd);
-							if (verbScriptHasPickupSelf(entry.verbBlock.data(),
-							                             entry.verbBlock.size(),
-							                             sStart, sEnd, entry.objId)) {
-								entry.isPickuppable = true;
-							}
-							break;
-						}
-					}
-				}
-
-				int idx = catalog.size();
-				catalog.push_back(entry);
-				objToCatalogIdx[entry.objId] = idx;
-
-				debug(1, "  Room %d: obj %d \"%s\" %s",
-				      roomId, entry.objId, entry.name.c_str(),
-				      entry.isPickuppable ? "[PICKUPPABLE]" : "");
+			// Read obj_id from CDHD
+			if (entry.cdhdBlock.size() >= 10) {
+				entry.objId = READ_LE_UINT16(entry.cdhdBlock.data() + 8);
 			}
 
-			pos += childSize;
+			entry.name = getObjName(entry.obnaBlock);
+
+			if (!entry.verbBlock.empty()) {
+				entry.verbTable = parseVerbTable(entry.verbBlock.data());
+
+				// Extract target object IDs from pickupObject opcodes;
+				// the *target* is what's pickuppable, not this object.
+				for (int vi = 0; vi < (int)entry.verbTable.size(); vi++) {
+					uint16 sStart, sEnd;
+					getVerbScriptRange(entry.verbTable, vi,
+					                   entry.verbBlock.size(), sStart, sEnd);
+					Common::Array<uint16> targets =
+						getPickupTargetObjIds(entry.verbBlock.data(),
+						                      entry.verbBlock.size(),
+					                      sStart, sEnd,
+					                      _numRooms);
+					for (int ti = 0; ti < (int)targets.size(); ti++) {
+						pickuppableObjIds[targets[ti]] = true;
+					}
+				}
+			}
+
+			int idx = catalog.size();
+			catalog.push_back(entry);
+			objToCatalogIdx[entry.objId] = idx;
+
+			debug(1, "  Room %d: obj %d \"%s\"",
+			      roomId, entry.objId, entry.name.c_str());
+		}
+	}
+
+	// Mark catalog entries that are targets of a pickupObject opcode
+	for (Common::HashMap<uint16, bool>::iterator it = pickuppableObjIds.begin();
+	     it != pickuppableObjIds.end(); ++it) {
+		uint16 targetId = it->_key;
+		if (objToCatalogIdx.contains(targetId)) {
+			catalog[objToCatalogIdx[targetId]].isPickuppable = true;
+			debug(1, "  Marked obj %d as pickuppable", targetId);
+		} else {
+			debug(1, "  pickupObject target obj %d not found in any room OBCD", targetId);
 		}
 	}
 
@@ -493,13 +489,15 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 		return Common::kNoError;
 	}
 
+	return Common::kNoError;
+
+#if 0
 	// ------------------------------------------------------------------
-	// Step 3: Fisher-Yates shuffle of pickuppable objects
+	// Step 2: Fisher-Yates shuffle of pickuppable objects
 	// ------------------------------------------------------------------
 
 	Common::RandomSource rng("scummv5randomizer");
 
-	// Create a permutation of the pickuppable objects
 	Common::Array<int> shuffled(pickuppableIndices.size());
 	for (int i = 0; i < (int)shuffled.size(); i++)
 		shuffled[i] = i;
@@ -519,17 +517,16 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 	}
 
 	// ------------------------------------------------------------------
-	// Step 4: Build merged OBCDs for each swapped pair
+	// Step 3: Build merged OBCDs for each swapped pair
 	// ------------------------------------------------------------------
 
-	// Map from obj_id to new OBCD bytes (only for objects that changed)
 	Common::HashMap<uint16, Common::Array<byte>> newObcds;
 
 	for (int i = 0; i < (int)shuffled.size(); i++) {
 		int slotIdx = pickuppableIndices[i];
 		int donorIdx = pickuppableIndices[shuffled[i]];
 
-		if (slotIdx == donorIdx) continue; // No swap needed
+		if (slotIdx == donorIdx) continue;
 
 		const ObjCatalogEntry &slot = catalog[slotIdx];
 		const ObjCatalogEntry &donor = catalog[donorIdx];
@@ -542,10 +539,10 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 	}
 
 	// ------------------------------------------------------------------
-	// Step 5: Rebuild each modified room in the .001 file
+	// Step 4: Rebuild each modified room by patching the in-memory
+	//         room resource data loaded by the engine.
 	// ------------------------------------------------------------------
 
-	// We need to track which rooms have modified objects
 	Common::HashMap<byte, bool> modifiedRooms;
 	for (Common::HashMap<uint16, Common::Array<byte>>::iterator it = newObcds.begin();
 	     it != newObcds.end(); ++it) {
@@ -555,120 +552,184 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 		}
 	}
 
-	// For each room, build the new ROOM block.
-	// roomNewBlocks: roomId -> new ROOM bytes
+	// roomNewBlocks: roomId -> new ROOM block bytes
 	Common::HashMap<byte, Common::Array<byte>> roomNewBlocks;
 
-	for (int ri = 0; ri < (int)roomOffsets.size(); ri++) {
-		byte roomId = roomOffsets[ri].roomId;
-		uint32 roomOff = roomOffsets[ri].offset;
+	for (int roomId = 1; roomId < _numRooms; roomId++) {
+		if (!modifiedRooms.contains((byte)roomId))
+			continue;
 
-		if (!modifiedRooms.contains(roomId)) continue;
+		const byte *roomPtr = getResourceAddress(rtRoom, roomId);
+		if (!roomPtr)
+			continue;
 
-		if (readTag(d001 + roomOff) != MKTAG('R', 'O', 'O', 'M')) continue;
-		uint32 roomSize = readSize(d001 + roomOff);
+		uint32 roomSize = READ_BE_UINT32(roomPtr + 4);
 
-		// Walk children, copy unchanged, substitute modified OBCDs
+		// Walk children of ROOM, copy unchanged blocks, substitute modified OBCDs
 		Common::Array<byte> newRoomData;
+		uint32 pos = 8;
 
-		uint32 pos = roomOff + 8;
-		uint32 roomEnd = roomOff + roomSize;
-
-		while (pos + 8 <= roomEnd) {
-			uint32 childTag = readTag(d001 + pos);
-			uint32 childSize = readSize(d001 + pos);
-			if (childSize == 0 || childSize > roomEnd - pos) break;
+		while (pos + 8 <= roomSize) {
+			uint32 childTag = READ_BE_UINT32(roomPtr + pos);
+			uint32 childSize = READ_BE_UINT32(roomPtr + pos + 4);
+			if (childSize == 0 || childSize > roomSize - pos) break;
 
 			if (childTag == MKTAG('O', 'B', 'C', 'D')) {
-				// Check if this OBCD has been modified
+				// Check if this OBCD should be replaced
 				uint16 objId = 0;
-				Common::Array<byte> cdhd = extractBlock(d001 + pos, MKTAG('C', 'D', 'H', 'D'));
+				Common::Array<byte> cdhd = extractBlock(roomPtr + pos, childSize,
+				                                         MKTAG('C', 'D', 'H', 'D'));
 				if (cdhd.size() >= 10) {
 					objId = READ_LE_UINT16(cdhd.data() + 8);
 				}
 
 				if (newObcds.contains(objId)) {
-					// Use the merged OBCD
 					const Common::Array<byte> &merged = newObcds[objId];
 					for (uint32 b = 0; b < merged.size(); b++)
 						newRoomData.push_back(merged[b]);
 					debug(1, "  Room %d: replaced OBCD for obj %d (old size %u, new size %u)",
 					      roomId, objId, childSize, merged.size());
 				} else {
-					// Copy original
 					for (uint32 b = 0; b < childSize; b++)
-						newRoomData.push_back(d001[pos + b]);
+						newRoomData.push_back(roomPtr[pos + b]);
 				}
 			} else {
-				// Copy unchanged child block
 				for (uint32 b = 0; b < childSize; b++)
-					newRoomData.push_back(d001[pos + b]);
+					newRoomData.push_back(roomPtr[pos + b]);
 			}
 
 			pos += childSize;
 		}
 
-		// Build the complete ROOM block with updated size
+		// Build ROOM block with updated size
 		uint32 newRoomSize = 8 + newRoomData.size();
 		Common::Array<byte> newRoom(newRoomSize);
 		WRITE_BE_UINT32(newRoom.data(), MKTAG('R', 'O', 'O', 'M'));
 		WRITE_BE_UINT32(newRoom.data() + 4, newRoomSize);
 		memcpy(newRoom.data() + 8, newRoomData.data(), newRoomData.size());
 
-		roomNewBlocks[roomId] = newRoom;
+		roomNewBlocks[(byte)roomId] = newRoom;
 		debug(0, "  Rebuilt room %d: %u -> %u bytes", roomId, roomSize, newRoomSize);
 	}
 
 	// ------------------------------------------------------------------
-	// Step 6: Write new .001 file
+	// Step 5: Reconstruct the .001 data file
+	//
+	// Read the original file structure using openRoom / _res metadata,
+	// then write new LECF ( LOFF, LFLF* ) with patched rooms.
 	// ------------------------------------------------------------------
 
-	// Structure: LECF ( LOFF, LFLF*, ... )
-	// Each LFLF wraps a ROOM block (and potentially SCRP, SOUN, COST, CHAR blocks)
+	// Gather disk-level room info from the resource manager
+	struct RoomFileInfo {
+		byte roomId;
+		uint32 origRoomOffs;  // offset of ROOM within the original file
+	};
+	Common::Array<RoomFileInfo> roomFileInfos;
 
-	// First, compute the new LOFF and LFLF blocks
-	// LOFF size = 8 (header) + 1 (numRooms) + numRooms * 5
-	uint32 newLoffSize = 8 + 1 + numRooms * 5;
+	for (int roomId = 1; roomId < _numRooms; roomId++) {
+		if (_res->_types[rtRoom][roomId]._roomoffs == RES_INVALID_OFFSET)
+			continue;
+		if (_res->_types[rtRoom][roomId]._roomoffs == 0 && roomId != 0)
+			continue;
 
-	// Calculate where each LFLF will go
-	// LECF header (8) + LOFF block
+		RoomFileInfo rfi;
+		rfi.roomId = (byte)roomId;
+		rfi.origRoomOffs = _res->_types[rtRoom][roomId]._roomoffs;
+		roomFileInfos.push_back(rfi);
+	}
+
+	// Read the original .001 file (we need the raw LFLF structure including
+	// extra blocks like SCRP, SOUN, COST, CHAR that sit alongside ROOM).
+	// Use the engine's openRoom / file handle to read it properly.
+	Common::Path dataFilename(generateFilename(1));
+
+	// Read the original raw file ourselves for the LFLF structure
+	// (the engine's loadResource only loads individual resources, not the
+	// full LFLF containers we need for reconstruction).
+	Common::File rawFile;
+	if (!rawFile.open(dataFilename)) {
+		warning("randomizer: Cannot open data file %s", dataFilename.toString().c_str());
+		return Common::kPathNotFile;
+	}
+
+	uint32 rawSize = rawFile.size();
+	Common::Array<byte> rawData(rawSize);
+	rawFile.read(rawData.data(), rawSize);
+	rawFile.close();
+
+	// XOR-decrypt the raw file (v5 uses 0x69 encryption)
+	xorBuffer(rawData.data(), rawData.size(), XOR_KEY);
+
+	const byte *d001 = rawData.data();
+	uint32 d001Size = rawData.size();
+
+	// Verify LECF header
+	if (READ_BE_UINT32(d001) != MKTAG('L', 'E', 'C', 'F')) {
+		warning("randomizer: Data file does not start with LECF");
+		return Common::kUnknownError;
+	}
+
+	// Parse LOFF block to get room offsets within the file
+	if (READ_BE_UINT32(d001 + 8) != MKTAG('L', 'O', 'F', 'F')) {
+		warning("randomizer: LOFF not found at expected offset");
+		return Common::kUnknownError;
+	}
+
+	byte numFileRooms = d001[16];
+	struct RoomOffset {
+		byte roomId;
+		uint32 offset;
+	};
+	Common::Array<RoomOffset> roomOffsets;
+
+	uint32 loffPos = 17;
+	for (int i = 0; i < numFileRooms; i++) {
+		RoomOffset ro;
+		ro.roomId = d001[loffPos];
+		ro.offset = READ_LE_UINT32(d001 + loffPos + 1);
+		roomOffsets.push_back(ro);
+		loffPos += 5;
+	}
+
+	// Build new LOFF + LFLF blocks
+	uint32 newLoffSize = 8 + 1 + numFileRooms * 5;
 	uint32 currentOffset = 8 + newLoffSize;
 
 	struct NewRoomInfo {
 		byte roomId;
-		uint32 lflfOffset;   // from file start
-		uint32 roomOffset;   // from file start (LFLF + 8)
+		uint32 lflfOffset;
+		uint32 roomOffset;
 		Common::Array<byte> roomBlock;
-		Common::Array<byte> extraBlocks; // SCRP, SOUN, COST, CHAR etc. after ROOM
+		Common::Array<byte> extraBlocks;
 	};
 	Common::Array<NewRoomInfo> newRoomInfos;
 
 	for (int ri = 0; ri < (int)roomOffsets.size(); ri++) {
-		byte roomId = roomOffsets[ri].roomId;
+		byte rmId = roomOffsets[ri].roomId;
 		uint32 origRoomOff = roomOffsets[ri].offset;
 
 		NewRoomInfo info;
-		info.roomId = roomId;
+		info.roomId = rmId;
 
-		// Get the room block (new or original)
-		if (roomNewBlocks.contains(roomId)) {
-			info.roomBlock = roomNewBlocks[roomId];
+		// Use modified room block if available, else copy original from raw data
+		if (roomNewBlocks.contains(rmId)) {
+			info.roomBlock = roomNewBlocks[rmId];
 		} else {
-			// Copy original ROOM block
-			if (origRoomOff + 8 <= d001Size && readTag(d001 + origRoomOff) == MKTAG('R', 'O', 'O', 'M')) {
-				uint32 origSize = readSize(d001 + origRoomOff);
+			if (origRoomOff + 8 <= d001Size &&
+			    READ_BE_UINT32(d001 + origRoomOff) == MKTAG('R', 'O', 'O', 'M')) {
+				uint32 origSize = READ_BE_UINT32(d001 + origRoomOff + 4);
 				info.roomBlock.resize(origSize);
 				memcpy(info.roomBlock.data(), d001 + origRoomOff, origSize);
 			}
 		}
 
-		// Collect extra blocks after ROOM in the same LFLF
-		// LFLF starts at origRoomOff - 8
+		// Collect extra blocks (SCRP, SOUN, COST, CHAR, etc.) after ROOM in the LFLF
 		uint32 lflfOff = origRoomOff - 8;
-		if (lflfOff < d001Size && readTag(d001 + lflfOff) == MKTAG('L', 'F', 'L', 'F')) {
-			uint32 lflfSize = readSize(d001 + lflfOff);
+		if (lflfOff < d001Size &&
+		    READ_BE_UINT32(d001 + lflfOff) == MKTAG('L', 'F', 'L', 'F')) {
+			uint32 lflfSize = READ_BE_UINT32(d001 + lflfOff + 4);
 			uint32 lflfEnd = lflfOff + lflfSize;
-			uint32 origRoomSize = readSize(d001 + origRoomOff);
+			uint32 origRoomSize = READ_BE_UINT32(d001 + origRoomOff + 4);
 			uint32 extraStart = origRoomOff + origRoomSize;
 
 			if (extraStart < lflfEnd) {
@@ -678,21 +739,16 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 			}
 		}
 
-		// Calculate LFLF offset (from file start, not from LECF start)
 		info.lflfOffset = currentOffset;
-		info.roomOffset = currentOffset + 8; // LFLF header is 8 bytes
+		info.roomOffset = currentOffset + 8;
 
-		// LFLF size = 8 (LFLF header) + ROOM block + extra blocks
 		uint32 lflfContentSize = info.roomBlock.size() + info.extraBlocks.size();
-		uint32 lflfTotalSize = 8 + lflfContentSize;
-
-		currentOffset += lflfTotalSize;
+		currentOffset += 8 + lflfContentSize;
 		newRoomInfos.push_back(info);
 	}
 
-	uint32 lecfTotalSize = currentOffset; // Total file size = LECF size
+	uint32 lecfTotalSize = currentOffset;
 
-	// Now write the file
 	debug(0, "Writing new .001 file (%u bytes)", lecfTotalSize);
 
 	Common::Array<byte> output(lecfTotalSize);
@@ -707,12 +763,12 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 	byte *loffPtr = out + 8;
 	WRITE_BE_UINT32(loffPtr, MKTAG('L', 'O', 'F', 'F'));
 	WRITE_BE_UINT32(loffPtr + 4, newLoffSize);
-	loffPtr[8] = numRooms;
+	loffPtr[8] = numFileRooms;
 
 	byte *loffEntries = loffPtr + 9;
 	for (int i = 0; i < (int)newRoomInfos.size(); i++) {
 		loffEntries[0] = newRoomInfos[i].roomId;
-		WRITE_LE_UINT32(loffEntries + 1, newRoomInfos[i].roomOffset); // LOFF points to ROOM
+		WRITE_LE_UINT32(loffEntries + 1, newRoomInfos[i].roomOffset);
 		loffEntries += 5;
 	}
 
@@ -748,29 +804,43 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 	debug(0, "Wrote .001 (%u bytes)", output.size());
 
 	// ------------------------------------------------------------------
-	// Step 7: Write updated .000 index file
+	// Step 6: Write updated .000 index file
+	//
+	// Read the original index, patch DROO room offsets to reflect
+	// the new LFLF layout.
 	// ------------------------------------------------------------------
 
-	// Copy the .000 file, then patch the DROO block's room offsets
-	Common::Array<byte> newIndex(data000); // already decrypted
+	// Read the original .000 index file
+	Common::Path indexFilename(generateFilename(0));
+	Common::File idxRawFile;
+	if (!idxRawFile.open(indexFilename)) {
+		warning("randomizer: Cannot open index file %s", indexFilename.toString().c_str());
+		return Common::kPathNotFile;
+	}
 
-	// Find DROO block in the index
+	uint32 idxSize = idxRawFile.size();
+	Common::Array<byte> newIndex(idxSize);
+	idxRawFile.read(newIndex.data(), idxSize);
+	idxRawFile.close();
+
+	// XOR-decrypt the index
+	xorBuffer(newIndex.data(), newIndex.size(), XOR_KEY);
+
+	// Find and patch the DROO block with new room offsets
 	uint32 idxPos = 0;
 	while (idxPos + 8 < newIndex.size()) {
-		uint32 blockTag = readTag(newIndex.data() + idxPos);
-		uint32 blockSize = readSize(newIndex.data() + idxPos);
+		uint32 blockTag = READ_BE_UINT32(newIndex.data() + idxPos);
+		uint32 blockSize = READ_BE_UINT32(newIndex.data() + idxPos + 4);
 		if (blockSize == 0) break;
 
 		if (blockTag == MKTAG('D', 'R', 'O', 'O')) {
-			// DROO format: tag(4) + size(4) + num(2 LE) + roomno[num](1 each) + roomoffs[num](4 LE each)
 			uint16 num = READ_LE_UINT16(newIndex.data() + idxPos + 8);
-			uint32 roomOffsStart = idxPos + 8 + 2 + num; // after num + roomno array
+			uint32 roomOffsStart = idxPos + 8 + 2 + num;
 
-			// Update room offsets
 			for (int ri = 0; ri < (int)newRoomInfos.size(); ri++) {
-				byte roomId = newRoomInfos[ri].roomId;
-				if (roomId < num) {
-					WRITE_LE_UINT32(newIndex.data() + roomOffsStart + roomId * 4,
+				byte rmId = newRoomInfos[ri].roomId;
+				if (rmId < num) {
+					WRITE_LE_UINT32(newIndex.data() + roomOffsStart + rmId * 4,
 					                newRoomInfos[ri].roomOffset);
 				}
 			}
@@ -796,4 +866,5 @@ Common::Error ScummEngine_v5::randomizeGameFiles() {
 
 	debug(0, "=== Randomization complete! ===");
 	return Common::kNoError;
+#endif
 }
