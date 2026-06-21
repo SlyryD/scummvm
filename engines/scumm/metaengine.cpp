@@ -36,6 +36,7 @@
 #include "backends/keymapper/standard-actions.h"
 
 #include "scumm/he/intern_he.h"
+#include "scumm/randomizer_v5.h"
 #include "scumm/scumm_v0.h"
 #include "scumm/scumm_v8.h"
 #include "scumm/dialogs.h"
@@ -470,7 +471,11 @@ Common::Error ScummMetaEngine::createInstance(OSystem *syst, Engine **engine,
 		*engine = new ScummEngine_v4(syst, res);
 		break;
 	case 5:
+	#ifdef RANDOMIZER
+		*engine = new Randomizer_v5(syst, res);
+	#else
 		*engine = new ScummEngine_v5(syst, res);
+	#endif
 		break;
 	case 6:
 		switch (res.game.heversion) {

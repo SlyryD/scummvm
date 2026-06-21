@@ -576,11 +576,7 @@ public:
 		err = init();
 		if (err.getCode() != Common::kNoError)
 			return err;
-#ifdef RANDOMIZER
-		return randomizeGameFiles();
-#else
 		return go();
-#endif
 	}
 
 	void errorString(const char *buf_input, char *buf_output, int buf_output_size) override;

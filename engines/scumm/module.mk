@@ -71,7 +71,7 @@ MODULE_OBJS := \
 	players/player_v2cms.o \
 	players/player_v3a.o \
 	players/player_v4a.o \
-	randomizer.o \
+	randomizer_v5.o \
 	resource_v2.o \
 	resource_v3.o \
 	resource_v4.o \
