@@ -20,25 +20,6 @@ static const byte XOR_KEY = 0x69;
 static const byte V5_PARAM_1 = 0x80;
 static const byte V5_PARAM_2 = 0x40;
 
-struct ObjCatalogEntry {
-	uint16 objId;
-	byte roomId;
-	Common::Array<byte> cdhdBlock;
-	Common::Array<byte> verbBlock;
-	Common::Array<byte> obnaBlock;
-	Common::Array<byte> fullObcd;
-	Common::String name;
-	bool isPickuppable;
-
-	struct VerbEntry {
-		byte verbId;
-		uint16 offset;
-	};
-	Common::Array<VerbEntry> verbTable;
-
-	ObjCatalogEntry() : objId(0), roomId(0), isPickuppable(false) {}
-};
-
 static Common::Array<ObjCatalogEntry::VerbEntry> parseVerbTable(const byte *verbBlock) {
 	Common::Array<ObjCatalogEntry::VerbEntry> entries;
 	const byte *p = verbBlock + 8;
@@ -322,41 +303,78 @@ static void xorBuffer(byte *buf, uint32 size, byte key) {
 } // namespace
 
 Randomizer_v5::Randomizer_v5(OSystem *syst, const DetectorResult &dr)
-	: ScummEngine_v5(syst, dr) {
+	: ScummEngine_v5(syst, dr), _discoveryRecursionDepth(0), _discoveryInstructionCount(0) {
+}
+
+#define OPCODE(i, x) _opcodes[i]._OPCODE(Randomizer_v5, x)
+
+void Randomizer_v5::setupScumm(const Common::Path &macResourceFile) {
+	ScummEngine_v5::setupScumm(macResourceFile);
+	_res->allocResTypeData(rtBuffer, 0, 10, kDynamicResTypeMode);
 }
 
 void Randomizer_v5::setupOpcodes() {
 	ScummEngine_v5::setupOpcodes();
-	_opcodes[0x25]._OPCODE(Randomizer_v5, o5_pickupObject);
-	_opcodes[0x65]._OPCODE(Randomizer_v5, o5_pickupObject);
-	_opcodes[0xA5]._OPCODE(Randomizer_v5, o5_pickupObject);
-	_opcodes[0xE5]._OPCODE(Randomizer_v5, o5_pickupObject);
 
-	const byte loadRoomOps[] = {0x72, 0xF2};
-	const byte loadRoomWithEgoOps[] = {0x24, 0x64, 0xA4, 0xE4};
-	const byte putActorOps[] = {0x01, 0x21, 0x41, 0x61, 0x81, 0xA1, 0xC1, 0xE1};
-	const byte putActorAtObjectOps[] = {0x0E, 0x4E, 0x8E, 0xCE};
-	const byte putActorInRoomOps[] = {0x2D, 0x6D, 0xAD, 0xED};
-	const byte walkActorToOps[] = {0x1E, 0x3E, 0x5E, 0x7E, 0x9E, 0xBE, 0xDE, 0xFE};
-	const byte walkActorToActorOps[] = {0x0D, 0x4D, 0x8D, 0xCD};
-	const byte walkActorToObjectOps[] = {0x36, 0x76, 0xB6, 0xF6};
+	/* pickupObject */
+	OPCODE(0x25, o5_pickupObject);
+	OPCODE(0x65, o5_pickupObject);
+	OPCODE(0xA5, o5_pickupObject);
+	OPCODE(0xE5, o5_pickupObject);
 
-	for (int i = 0; i < ARRAYSIZE(loadRoomOps); i++)
-		_opcodes[loadRoomOps[i]]._OPCODE(Randomizer_v5, o5_loadRoom);
-	for (int i = 0; i < ARRAYSIZE(loadRoomWithEgoOps); i++)
-		_opcodes[loadRoomWithEgoOps[i]]._OPCODE(Randomizer_v5, o5_loadRoomWithEgo);
-	for (int i = 0; i < ARRAYSIZE(putActorOps); i++)
-		_opcodes[putActorOps[i]]._OPCODE(Randomizer_v5, o5_putActor);
-	for (int i = 0; i < ARRAYSIZE(putActorAtObjectOps); i++)
-		_opcodes[putActorAtObjectOps[i]]._OPCODE(Randomizer_v5, o5_putActorAtObject);
-	for (int i = 0; i < ARRAYSIZE(putActorInRoomOps); i++)
-		_opcodes[putActorInRoomOps[i]]._OPCODE(Randomizer_v5, o5_putActorInRoom);
-	for (int i = 0; i < ARRAYSIZE(walkActorToOps); i++)
-		_opcodes[walkActorToOps[i]]._OPCODE(Randomizer_v5, o5_walkActorTo);
-	for (int i = 0; i < ARRAYSIZE(walkActorToActorOps); i++)
-		_opcodes[walkActorToActorOps[i]]._OPCODE(Randomizer_v5, o5_walkActorToActor);
-	for (int i = 0; i < ARRAYSIZE(walkActorToObjectOps); i++)
-		_opcodes[walkActorToObjectOps[i]]._OPCODE(Randomizer_v5, o5_walkActorToObject);
+	/* loadRoom */
+	OPCODE(0x72, o5_loadRoom);
+	OPCODE(0xF2, o5_loadRoom);
+
+	/* loadRoomWithEgo */
+	OPCODE(0x24, o5_loadRoomWithEgo);
+	OPCODE(0x64, o5_loadRoomWithEgo);
+	OPCODE(0xA4, o5_loadRoomWithEgo);
+	OPCODE(0xE4, o5_loadRoomWithEgo);
+
+	/* putActor */
+	OPCODE(0x01, o5_putActor);
+	OPCODE(0x21, o5_putActor);
+	OPCODE(0x41, o5_putActor);
+	OPCODE(0x61, o5_putActor);
+	OPCODE(0x81, o5_putActor);
+	OPCODE(0xA1, o5_putActor);
+	OPCODE(0xC1, o5_putActor);
+	OPCODE(0xE1, o5_putActor);
+
+	/* putActorAtObject */
+	OPCODE(0x0E, o5_putActorAtObject);
+	OPCODE(0x4E, o5_putActorAtObject);
+	OPCODE(0x8E, o5_putActorAtObject);
+	OPCODE(0xCE, o5_putActorAtObject);
+
+	/* putActorInRoom */
+	OPCODE(0x2D, o5_putActorInRoom);
+	OPCODE(0x6D, o5_putActorInRoom);
+	OPCODE(0xAD, o5_putActorInRoom);
+	OPCODE(0xED, o5_putActorInRoom);
+
+	/* walkActorTo */
+	OPCODE(0x1E, o5_walkActorTo);
+	OPCODE(0x3E, o5_walkActorTo);
+	OPCODE(0x5E, o5_walkActorTo);
+	OPCODE(0x7E, o5_walkActorTo);
+	OPCODE(0x9E, o5_walkActorTo);
+	OPCODE(0xBE, o5_walkActorTo);
+	OPCODE(0xDE, o5_walkActorTo);
+	OPCODE(0xFE, o5_walkActorTo);
+
+	/* walkActorToActor */
+	OPCODE(0x0D, o5_walkActorToActor);
+	OPCODE(0x4D, o5_walkActorToActor);
+	OPCODE(0x8D, o5_walkActorToActor);
+	OPCODE(0xCD, o5_walkActorToActor);
+
+	/* walkActorToObject */
+	OPCODE(0x36, o5_walkActorToObject);
+	OPCODE(0x76, o5_walkActorToObject);
+	OPCODE(0xB6, o5_walkActorToObject);
+	OPCODE(0xF6, o5_walkActorToObject);
 }
 
 void Randomizer_v5::resetDiscoveryState() {
@@ -414,8 +432,6 @@ void Randomizer_v5::prepareRoomForDiscovery(int roomId) {
 	openRoom(roomId);
 	clearRoomObjects();
 	setupRoomSubBlocks();
-	resetRoomSubBlocks();
-	resetRoomObjects();
 
 	Actor *ego = derefActorSafe(1, "Randomizer_v5::prepareRoomForDiscovery");
 	if (ego)
@@ -423,7 +439,20 @@ void Randomizer_v5::prepareRoomForDiscovery(int roomId) {
 }
 
 void Randomizer_v5::executeScriptAtOffset(uint16 scriptNumber, uint32 scriptOffset, byte where, int *vars) {
+	// Check safeguards to prevent runaway scripts during discovery
+	if (_discoveryRecursionDepth >= MAX_DISCOVERY_RECURSION) {
+		debug(1, "  Discovery: hit recursion limit, skipping script");
+		return;
+	}
+	
+	_discoveryRecursionDepth++;
+	
 	int slot = getScriptSlot();
+	if (slot < 0 || slot >= NUM_SCRIPT_SLOT) {
+		_discoveryRecursionDepth--;
+		return;
+	}
+	
 	ScriptSlot *scriptSlot = &vm.slot[slot];
 
 	scriptSlot->number = scriptNumber;
@@ -437,7 +466,11 @@ void Randomizer_v5::executeScriptAtOffset(uint16 scriptNumber, uint32 scriptOffs
 	scriptSlot->cycle = 1;
 
 	initializeLocals(slot, vars);
+	
+	// Run the script via base class method
 	runScriptNested(slot);
+	
+	_discoveryRecursionDepth--;
 }
 
 void Randomizer_v5::o5_pickupObject() {
@@ -500,6 +533,147 @@ void Randomizer_v5::o5_walkActorToObject() {
 	(void)getVarOrDirectWord(PARAM_2);
 }
 
+void Randomizer_v5::discoverPickuppableObjects(Common::Array<ObjCatalogEntry> &catalog, Common::Array<int> &outPickuppableIndices) {
+	debug(0, "Discovering pickuppable objects via interpreter...");
+	
+	_pickupCalls.clear();
+	_discoveryRecursionDepth = 0;
+	_discoveryInstructionCount = 0;
+	
+	// Build catalog of all objects first (same as before)
+	Common::HashMap<uint16, int> objToCatalogIdx;
+	
+	debug(0, "Scanning %d rooms for objects...", _numRooms);
+	
+	for (int roomId = 1; roomId < _numRooms; roomId++) {
+		if (_res->_types[rtRoom][roomId]._roomoffs == RES_INVALID_OFFSET)
+			continue;
+		if (_res->_types[rtRoom][roomId]._roomoffs == 0 && roomId != 0)
+			continue;
+		
+		const byte *roomPtr = getResourceAddress(rtRoom, roomId);
+		if (!roomPtr)
+			continue;
+		
+		const byte *rmhd = findResourceData(MKTAG('R', 'M', 'H', 'D'), roomPtr);
+		if (!rmhd)
+			continue;
+		int numObjects = READ_LE_UINT16(&((const RoomHeader *)rmhd)->old.numObjects);
+		if (numObjects == 0)
+			continue;
+		
+		ResourceIterator obcds(roomPtr, false);
+		for (int objectIndex = 0; objectIndex < numObjects; objectIndex++) {
+			const byte *obcdPtr = obcds.findNext(MKTAG('O', 'B', 'C', 'D'));
+			if (!obcdPtr)
+				break;
+			
+			uint32 obcdSize = READ_BE_UINT32(obcdPtr + 4);
+			
+			ObjCatalogEntry entry;
+			entry.roomId = (byte)roomId;
+			entry.fullObcd.resize(obcdSize);
+			memcpy(entry.fullObcd.data(), obcdPtr, obcdSize);
+			entry.cdhdBlock = extractBlock(obcdPtr, obcdSize, MKTAG('C', 'D', 'H', 'D'));
+			entry.verbBlock = extractBlock(obcdPtr, obcdSize, MKTAG('V', 'E', 'R', 'B'));
+			entry.obnaBlock = extractBlock(obcdPtr, obcdSize, MKTAG('O', 'B', 'N', 'A'));
+			
+			if (entry.cdhdBlock.size() >= 10)
+				entry.objId = READ_LE_UINT16(entry.cdhdBlock.data() + 8);
+			
+			entry.name = getObjName(entry.obnaBlock);
+			
+			int idx = catalog.size();
+			catalog.push_back(entry);
+			objToCatalogIdx[entry.objId] = idx;
+			
+			debug(1, "  Room %d: obj %d \"%s\"", roomId, entry.objId, entry.name.c_str());
+		}
+	}
+	
+	// Now execute all scripts to discover pickups via interpreter
+	debug(0, "Executing scripts to discover pickups...");
+	
+	resetDiscoveryState();
+	
+	// Execute all scripts in all rooms
+	for (int roomId = 1; roomId < _numRooms; roomId++) {
+		if (_res->_types[rtRoom][roomId]._roomoffs == RES_INVALID_OFFSET)
+			continue;
+		if (_res->_types[rtRoom][roomId]._roomoffs == 0 && roomId != 0)
+			continue;
+		
+		const byte *roomPtr = getResourceAddress(rtRoom, roomId);
+		if (!roomPtr)
+			continue;
+		
+		prepareRoomForDiscovery(roomId);
+		
+		// Execute verb scripts for all objects in the room
+		const byte *rmhd = findResourceData(MKTAG('R', 'M', 'H', 'D'), roomPtr);
+		if (rmhd) {
+			int numObjects = READ_LE_UINT16(&((const RoomHeader *)rmhd)->old.numObjects);
+			
+			// Create new iterator for each room to iterate all OBCDs
+			ResourceIterator obcds(roomPtr, false);
+			for (int objectIndex = 0; objectIndex < numObjects; objectIndex++) {
+				const byte *obcdPtr = obcds.findNext(MKTAG('O', 'B', 'C', 'D'));
+				if (!obcdPtr)
+					break;
+				
+				const byte *verbBlock = findResourceData(MKTAG('V', 'E', 'R', 'B'), obcdPtr);
+				
+				if (!verbBlock)
+					continue;
+				
+				// Parse verb table and execute verb scripts
+				const byte *verbPtr = verbBlock + 8;
+				int verbCount = 0;
+				while (*verbPtr != 0x00) {
+					byte verbId = *verbPtr;
+					uint16 scriptOffset = READ_LE_UINT16(verbPtr + 1);
+					
+					debug(1, "  Room %d object %d: executing verb %d script at offset %d", roomId, objectIndex, verbId, scriptOffset);
+					resetDiscoveryState();
+					prepareRoomForDiscovery(roomId);
+					
+					// Execute the verb script—this may trigger o5_pickupObject calls
+					executeScriptAtOffset(0, scriptOffset, 2);
+					
+					verbPtr += 3;
+					verbCount++;
+				}
+				
+				if (verbCount > 0)
+					debug(1, "  Room %d object %d: executed %d verb scripts", roomId, objectIndex, verbCount);
+			}
+		}
+	}
+	
+	// Now mark which objects are pickuppable based on collected calls
+	// (accumulated across all executed scripts)
+	Common::HashMap<uint16, bool> pickuppableObjs;
+	for (int i = 0; i < (int)_pickupCalls.size(); i++) {
+		pickuppableObjs[_pickupCalls[i].objectId] = true;
+		debug(1, "  Found pickup call: obj %d in room %d", _pickupCalls[i].objectId, _pickupCalls[i].room);
+	}
+	
+	for (int i = 0; i < (int)catalog.size(); i++) {
+		if (pickuppableObjs.contains(catalog[i].objId)) {
+			catalog[i].isPickuppable = true;
+			debug(1, "  Marked obj %d as pickuppable (interpreter discovery)", catalog[i].objId);
+		}
+	}
+	
+	// Build list of pickuppable indices
+	for (int i = 0; i < (int)catalog.size(); i++) {
+		if (catalog[i].isPickuppable)
+			outPickuppableIndices.push_back(i);
+	}
+	
+	debug(0, "Discovery complete: %d pickuppable objects found", outPickuppableIndices.size());
+}
+
 Common::Error Randomizer_v5::run() {
 	Common::Error err;
 	err = init();
@@ -512,149 +686,10 @@ Common::Error Randomizer_v5::randomize() {
 	debug(0, "=== SCUMM V5 OBCD Swap Randomizer ===");
 
 	Common::Array<ObjCatalogEntry> catalog;
-	Common::HashMap<uint16, int> objToCatalogIdx;
-
-	debug(0, "Scanning %d rooms for objects...", _numRooms);
-
-	for (int roomId = 1; roomId < _numRooms; roomId++) {
-		if (_res->_types[rtRoom][roomId]._roomoffs == RES_INVALID_OFFSET)
-			continue;
-		if (_res->_types[rtRoom][roomId]._roomoffs == 0 && roomId != 0)
-			continue;
-
-		const byte *roomPtr = getResourceAddress(rtRoom, roomId);
-		if (!roomPtr)
-			continue;
-
-		const byte *rmhd = findResourceData(MKTAG('R', 'M', 'H', 'D'), roomPtr);
-		if (!rmhd)
-			continue;
-		int numObjects = READ_LE_UINT16(&((const RoomHeader *)rmhd)->old.numObjects);
-		if (numObjects == 0)
-			continue;
-
-		ResourceIterator obcds(roomPtr, false);
-		for (int objectIndex = 0; objectIndex < numObjects; objectIndex++) {
-			const byte *obcdPtr = obcds.findNext(MKTAG('O', 'B', 'C', 'D'));
-			if (!obcdPtr)
-				break;
-
-			uint32 obcdSize = READ_BE_UINT32(obcdPtr + 4);
-
-			ObjCatalogEntry entry;
-			entry.roomId = (byte)roomId;
-			entry.fullObcd.resize(obcdSize);
-			memcpy(entry.fullObcd.data(), obcdPtr, obcdSize);
-			entry.cdhdBlock = extractBlock(obcdPtr, obcdSize, MKTAG('C', 'D', 'H', 'D'));
-			entry.verbBlock = extractBlock(obcdPtr, obcdSize, MKTAG('V', 'E', 'R', 'B'));
-			entry.obnaBlock = extractBlock(obcdPtr, obcdSize, MKTAG('O', 'B', 'N', 'A'));
-
-			if (entry.cdhdBlock.size() >= 10)
-				entry.objId = READ_LE_UINT16(entry.cdhdBlock.data() + 8);
-
-			entry.name = getObjName(entry.obnaBlock);
-			if (!entry.verbBlock.empty())
-				entry.verbTable = parseVerbTable(entry.verbBlock.data());
-
-			int idx = catalog.size();
-			catalog.push_back(entry);
-			objToCatalogIdx[entry.objId] = idx;
-
-			debug(1, "  Room %d: obj %d \"%s\"", roomId, entry.objId, entry.name.c_str());
-		}
-	}
-
-	_pickupCalls.clear();
-	resetDiscoveryState();
-
-	int zeroArgs[NUM_SCRIPT_LOCAL];
-	memset(zeroArgs, 0, sizeof(zeroArgs));
-
-	_currentRoom = 0;
-	_roomResource = 0;
-	if (VAR_ROOM != 0xFF)
-		VAR(VAR_ROOM) = 0;
-	if (VAR_ROOM_RESOURCE != 0xFF)
-		VAR(VAR_ROOM_RESOURCE) = 0;
-
-	Actor *ego = derefActorSafe(1, "Randomizer_v5::go");
-	if (ego)
-		ego->putActor(0, 0, 0);
-
-	for (int scriptId = 1; scriptId < _numGlobalScripts; scriptId++) {
-		if (_res->_types[rtScript][scriptId]._roomoffs == RES_INVALID_OFFSET)
-			continue;
-		if (!getResourceAddress(rtScript, scriptId))
-			continue;
-		runScript(scriptId, false, false, zeroArgs);
-	}
-
-	for (int roomId = 1; roomId < _numRooms; roomId++) {
-		if (_res->_types[rtRoom][roomId]._roomoffs == RES_INVALID_OFFSET)
-			continue;
-		if (_res->_types[rtRoom][roomId]._roomoffs == 0 && roomId != 0)
-			continue;
-
-		prepareRoomForDiscovery(roomId);
-
-		for (int localIndex = 0; localIndex < _numLocalScripts; localIndex++) {
-			if (_localScriptOffsets[localIndex] == 0)
-				continue;
-			runScript(_numGlobalScripts + localIndex, false, false, zeroArgs);
-		}
-
-		const byte *roomPtr = getResourceAddress(rtRoom, roomId);
-		if (!roomPtr)
-			continue;
-
-		const byte *rmhd = findResourceData(MKTAG('R', 'M', 'H', 'D'), roomPtr);
-		if (!rmhd)
-			continue;
-		int numObjects = READ_LE_UINT16(&((const RoomHeader *)rmhd)->old.numObjects);
-		if (numObjects == 0)
-			continue;
-
-		ResourceIterator obcds(roomPtr, false);
-		for (int objectIndex = 0; objectIndex < numObjects; objectIndex++) {
-			const byte *obcdPtr = obcds.findNext(MKTAG('O', 'B', 'C', 'D'));
-			if (!obcdPtr)
-				break;
-
-			const byte *cdhd = findResourceData(MKTAG('C', 'D', 'H', 'D'), obcdPtr);
-			const byte *verb = findResource(MKTAG('V', 'E', 'R', 'B'), obcdPtr);
-			if (!cdhd || !verb)
-				continue;
-
-			uint16 objId = READ_LE_UINT16(cdhd + 0);
-			Common::Array<ObjCatalogEntry::VerbEntry> verbTable = parseVerbTable(verb);
-			uint32 verbBaseOffset = verb - roomPtr;
-
-			for (int verbIndex = 0; verbIndex < (int)verbTable.size(); verbIndex++) {
-				executeScriptAtOffset(objId, verbBaseOffset + verbTable[verbIndex].offset, WIO_ROOM, zeroArgs);
-			}
-		}
-	}
-
-	Common::HashMap<uint16, bool> pickuppableObjIds;
-	for (int i = 0; i < (int)_pickupCalls.size(); i++) {
-		pickuppableObjIds[_pickupCalls[i].objectId] = true;
-	}
-
-	for (Common::HashMap<uint16, bool>::iterator it = pickuppableObjIds.begin(); it != pickuppableObjIds.end(); ++it) {
-		uint16 targetId = it->_key;
-		if (objToCatalogIdx.contains(targetId)) {
-			catalog[objToCatalogIdx[targetId]].isPickuppable = true;
-			debug(1, "  Marked obj %d as pickuppable", targetId);
-		} else {
-			debug(1, "  pickupObject target obj %d not found in any room OBCD", targetId);
-		}
-	}
-
 	Common::Array<int> pickuppableIndices;
-	for (int i = 0; i < (int)catalog.size(); i++) {
-		if (catalog[i].isPickuppable)
-			pickuppableIndices.push_back(i);
-	}
+
+	// Use interpreter-based discovery instead of static analysis
+	discoverPickuppableObjects(catalog, pickuppableIndices);
 
 	debug(0, "Total objects: %d, pick-uppable: %d", catalog.size(), pickuppableIndices.size());
 	for (int i = 0; i < (int)pickuppableIndices.size(); i++) {
@@ -665,6 +700,12 @@ Common::Error Randomizer_v5::randomize() {
 	if (pickuppableIndices.size() < 2) {
 		warning("randomizer: Not enough pickuppable objects to shuffle");
 		return Common::kNoError;
+	}
+
+	// Build mapping from objId to catalog index for later use
+	Common::HashMap<uint16, int> objToCatalogIdx;
+	for (int i = 0; i < (int)catalog.size(); i++) {
+		objToCatalogIdx[catalog[i].objId] = i;
 	}
 
 	Common::RandomSource rng("scummv5randomizer");

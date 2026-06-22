@@ -3,8 +3,29 @@
 
 #include "scumm/scumm_v5.h"
 #include "common/array.h"
+#include "common/str.h"
 
 namespace Scumm {
+
+// Struct for tracking all objects and their pickup status
+struct ObjCatalogEntry {
+	uint16 objId;
+	byte roomId;
+	Common::Array<byte> cdhdBlock;
+	Common::Array<byte> verbBlock;
+	Common::Array<byte> obnaBlock;
+	Common::Array<byte> fullObcd;
+	Common::String name;
+	bool isPickuppable;
+
+	struct VerbEntry {
+		byte verbId;
+		uint16 offset;
+	};
+	Common::Array<VerbEntry> verbTable;
+
+	ObjCatalogEntry() : objId(0), roomId(0), isPickuppable(false) {}
+};
 
 class Randomizer_v5 : public ScummEngine_v5 {
 public:
@@ -19,6 +40,7 @@ public:
 	Common::Error run() override;
 
 protected:
+	void setupScumm(const Common::Path &macResourceFile) override;
 	void setupOpcodes() override;
 	void o5_pickupObject();
 	void o5_loadRoom();
@@ -33,7 +55,14 @@ protected:
 private:
 	Common::Array<PickupCall> _pickupCalls;
 	Common::Error randomize();
+	
+	// Discovery safeguards
+	static const int MAX_DISCOVERY_RECURSION = 10;
+	int _discoveryRecursionDepth;
+	uint32 _discoveryInstructionCount;
+	static const uint32 MAX_DISCOVERY_INSTRUCTIONS = 100000;
 
+	void discoverPickuppableObjects(Common::Array<ObjCatalogEntry> &catalog, Common::Array<int> &outPickuppableIndices);
 	void resetDiscoveryState();
 	void prepareRoomForDiscovery(int roomId);
 	void executeScriptAtOffset(uint16 scriptNumber, uint32 scriptOffset, byte where, int *vars = nullptr);
