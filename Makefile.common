@@ -154,7 +154,7 @@ $(1)_OBJS_RANDOMIZER := $$(patsubst engines/$(1)/%.o,engines/$(1)/%_randomizer.o
 # Pattern rule to compile $(1) sources with RANDOMIZER flag
 engines/$(1)/%_randomizer.o: $$(srcdir)/engines/$(1)/%.cpp
 	$$(QUIET)$$(MKDIR) $$(*D)/$$(DEPDIR)
-	$$(QUIET_CXX)$$(CXX) $$(CXX_UPDATE_DEP_FLAG) $$(CXXFLAGS) $$(CPPFLAGS) -DRANDOMIZER -c $$< -o $$@
+	$$(QUIET_CXX)$$(CXX) -MMD -MF "$$(@D)/$$(DEPDIR)/$$(@F:.o=.d)" -MQ "$$@" -MP $$(CXXFLAGS) $$(CPPFLAGS) -DRANDOMIZER -c $$< -o $$@
 
 # Build lib$(1)_randomizer.a
 $$($(1)_LIB_RANDOMIZER): $$($(1)_OBJS_RANDOMIZER)
